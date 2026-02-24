@@ -1,18 +1,27 @@
 require 'test_helper'
-require 'csv'
+require 'playlist_parser'
 
 class TestPlaylistParser < Minitest::Test
-    def test_read_csv
-        csv_table_obj = PlaylistParser.read_csv("mirage.csv")
-        assert_instance_of CSV::Table, csv_table_obj
+    def display_linked_list(linked_list)
+        current = linked_list.head
+        return if current.nil?
+        
+        loop do
+            p current.props
+            current = current.next_node
+            break if current == linked_list.head
+        end
     end
     
-    def test_apply_csv_table
+    def test_parser
         ll = LinkedList.new
-        csv_table_obj = PlaylistParser.read_csv("mirage.csv")
-        assert_equal 4, csv_table_obj.length
         
-        PlaylistParser.apply(csv_table_obj, ll)
+        p = PlaylistParser.new(CONFIG[:playlists_folder])
+        assert_instance_of PlaylistParser, p
+
+        p.apply("mirage.csv", ll)
         assert_equal 4, ll.length
+
+        display_linked_list(ll)
     end
 end

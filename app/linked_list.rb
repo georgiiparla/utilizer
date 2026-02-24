@@ -9,13 +9,13 @@ class LinkedList
         @length = 0
     end
     
-    def add(value)
+    def add(props)
         if @head.nil?
-            @head = Node.new(value)
+            @head = Node.new(props)
             @head.next_node = @head
             @head.prev_node = @head
         else
-            new_node = Node.new(value)
+            new_node = Node.new(props)
             
             new_node.next_node = @head
             new_node.prev_node = @head.prev_node
