@@ -1,3 +1,6 @@
+require 'json'
+require 'fileutils'
+
 class BaseCommand
   CONFIG_PATH_FILE = File.join(Dir.home, ".utilizer_config_path")
 
