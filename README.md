@@ -1,5 +1,12 @@
 # Utilizer - CS2 Position Playlist Loader
 
+## Why Utilizer?
+Utilizer provides a unique, elegant, client-side approach to saving and loading CS2 positions without requiring dedicated servers, plugins, or paid subscriptions.
+
+- **Live Console Listener:** Eliminates manual config writing by tailing `console.log` in real-time to capture coordinates directly.
+- **CSV Playlists:** Organizes positions in highly readable, easily shareable, and mergeable CSV files instead of messy alias scripts.
+- **Pure Client-Side Cfg:** A lightweight, standalone CLI that instantly generates dynamic `.cfg` routines with zero server setup required.
+
 ## Installation
 
 1. Download `utilizer.exe`
