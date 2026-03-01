@@ -48,4 +48,4 @@ setpos x y z;setang pitch yaw roll,Position name
 - **Up Arrow** - Snap position
 - **Down Arrow** - Look down
 
-Type `u` in console to activate.
+Type `exec u` in console to activate.
