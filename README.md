@@ -21,6 +21,11 @@
 utilizer config C:\path\to\config\folder
 ```
 
+3. Add these exact launch options to your Counter-Strike 2 in Steam:
+```
+-condebug -conclearlog
+```
+
 ## Usage
 
 ```
