@@ -24,9 +24,13 @@ utilizer config C:\path\to\config\folder
 ## Usage
 
 ```
+utilizer                    Load the most recently edited playlist
+utilizer NAME               Load a playlist (e.g. utilizer mirage)
+utilizer listen             Listen to console to capture spots (requires save.cfg)
 utilizer list               List all playlists
 utilizer new NAME           Create new playlist
-utilizer playlist NAME      Run a playlist
+utilizer merge L1 L2 NEW_L  Merge two playlists into a new one
+utilizer delete NAME        Delete a playlist
 ```
 
 ## Playlist Format
@@ -44,4 +48,4 @@ setpos x y z;setang pitch yaw roll,Position name
 - **Up Arrow** - Snap position
 - **Down Arrow** - Look down
 
-Type `load` in console to activate.
+Type `u` in console to activate.

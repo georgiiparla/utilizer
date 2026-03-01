@@ -14,7 +14,7 @@ class CfgsOrchestrator
     (1..linked_list.length).each do |i|
       filename = File.join(utilizer_dir, "p_#{i}.cfg")
       File.open(filename, "w") do |file|
-        file.puts "setpos #{current.props[:setpos][:x]} #{current.props[:setpos][:y]} #{current.props[:setpos][:z]};setang #{current.props[:setang][:pitch]} #{current.props[:setang][:yaw]} #{current.props[:setang][:roll]}"
+        file.puts "noclip; setpos #{current.props[:setpos][:x]} #{current.props[:setpos][:y]} #{current.props[:setpos][:z]};setang #{current.props[:setang][:pitch]} #{current.props[:setang][:yaw]} #{current.props[:setang][:roll]}; noclip 0"
         file.puts "say \"[Pos #{i}] #{current.props[:description]}\""
       end
       current = current.next_node
@@ -22,7 +22,7 @@ class CfgsOrchestrator
   end
 
   def generate_loader(linked_list)
-    loader_filename = File.join(@csgo_cfg_folder, "load.cfg")
+    loader_filename = File.join(@csgo_cfg_folder, "u.cfg")
     File.open(loader_filename, "w") do |file|
       file.puts "sv_cheats 1"
 

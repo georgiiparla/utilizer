@@ -4,6 +4,7 @@ require 'listen_command'
 require 'new_command'
 require 'delete_command'
 require 'execute_command'
+require 'merge_command'
 
 class CLI
   USAGE = <<~HELP
@@ -15,6 +16,7 @@ class CLI
       utilizer listen             Listen to CS2 console log to record position spots
       utilizer list               List all available playlists
       utilizer new NAME           Create new empty playlist (e.g. utilizer new vertigo)
+      utilizer merge L1 L2 NEW_L  Merge two playlists into a new one
       utilizer delete NAME        Delete a playlist
       utilizer config DIR_PATH    Set path to directory containing utilizer_config.json
       utilizer config             Show current config directory and contents
@@ -26,6 +28,7 @@ class CLI
     "list"   => ListCommand,
     "listen" => ListenCommand,
     "new"    => NewCommand,
+    "merge"  => MergeCommand,
     "delete" => DeleteCommand
   }
 
