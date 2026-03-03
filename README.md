@@ -38,20 +38,27 @@ utilizer config C:\path\to\config\folder
 ```
 utilizer                    Load the most recently edited playlist
 utilizer NAME               Load a playlist (e.g. utilizer mirage)
-utilizer listen             Listen to console to capture spots (requires save.cfg)
+utilizer listen [--author]  Listen to console to capture spots (requires save.cfg)
 utilizer list               List all playlists
 utilizer new NAME           Create new playlist
 utilizer merge L1 L2 NEW_L  Merge two playlists into a new one
 utilizer delete NAME        Delete a playlist
+utilizer config populate    Auto-generate 'save.cfg' in CS2 cfg directory
 ```
 
 ## Playlist Format
 
-CSV with `command` and `description`:
+CSV with `command`, `description`, and `location`:
 ```
-command,description
-setpos x y z;setang pitch yaw roll,Position name
+command,description,location
+setpos x y z;setang pitch yaw roll,Position name,Apartments
 ```
+
+## Recording (Map Mode)
+When running `utilizer listen` in a live map, Utilizer intercepts team chat:
+1. Trigger your `save.cfg` bind to capture the coordinate.
+2. Type a description in **Team Chat** to label it.
+3. Type `u.undo` in **Team Chat** to delete the last captured spot.
 
 ## In-Game
 

@@ -13,12 +13,13 @@ class CLI
     Usage:
       utilizer                    Run the most recently edited playlist
       utilizer NAME               Run a playlist (e.g. utilizer mirage)
-      utilizer listen             Listen to CS2 console log to record position spots
+      utilizer listen [--author]  Listen to console to record spots (optionally attach author name)
       utilizer list               List all available playlists
       utilizer new NAME           Create new empty playlist (e.g. utilizer new vertigo)
       utilizer merge L1 L2 NEW_L  Merge two playlists into a new one
       utilizer delete NAME        Delete a playlist
       utilizer config DIR_PATH    Set path to directory containing utilizer_config.json
+      utilizer config populate    Auto-generate 'save.cfg' in CS2 cfg directory
       utilizer config             Show current config directory and contents
       utilizer help               Show this help
   HELP

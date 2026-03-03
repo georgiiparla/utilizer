@@ -15,7 +15,11 @@ class CfgsOrchestrator
       filename = File.join(utilizer_dir, "p_#{i}.cfg")
       File.open(filename, "w") do |file|
         file.puts "noclip; setpos #{current.props[:setpos][:x]} #{current.props[:setpos][:y]} #{current.props[:setpos][:z]};setang #{current.props[:setang][:pitch]} #{current.props[:setang][:yaw]} #{current.props[:setang][:roll]}; noclip 0"
-        file.puts "say \"[Pos #{i}] #{current.props[:description]}\""
+        
+        loc = current.props[:location].to_s.strip
+        desc = current.props[:description]
+        
+        file.puts "say_team \"[Utilizer] Pos #{i} (From: #{loc}) - #{desc}\""
       end
       current = current.next_node
     end

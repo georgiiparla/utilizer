@@ -45,8 +45,9 @@ class PlaylistParser
       setpos: setpos,
       setang: setang,
       description: row["description"],
+      location: row["location"],
       metadata: {
-        raw_source: row["command"] + "," + row["description"],
+        raw_source: "#{row["command"]},#{row["description"]},#{row["location"]}",
       },
     }
   end
