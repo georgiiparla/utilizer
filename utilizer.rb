@@ -95,7 +95,7 @@ class Utilizer
 
     content.each_line.with_index(1) do |line, line_number|
       line = line.strip
-      next if line.empty?
+      next if line.empty? || line.start_with?("//")
 
       if pending_description
         if line.match?(/\Asetpos(?:\s|\z)/i)

@@ -25,6 +25,15 @@ CT elbow,
 setpos -512 1696 88.842270;setang -26.949894 -101.927994
 ```
 
+Single-line comments may appear anywhere on their own lines. After optional indentation, a comment must start with `//`; inline and multiline comments are not supported. `//` appearing later in a description is ordinary text, but a description cannot begin with `//` because that entire line is a comment:
+
+```text
+// Instant elbow smoke
+CT elbow,
+// Captured from spawn 5
+setpos -512 1696 88.842270;setang -26.949894 -101.927994
+```
+
 For a position-only spot, replaying it does not change the view angle and the Down
 key does nothing because there is no saved yaw to preserve.
 
