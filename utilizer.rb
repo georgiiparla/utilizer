@@ -117,6 +117,7 @@ class Utilizer
     raise Error, "description cannot be empty" if description.empty?
 
     statements = command.split(";", -1).map(&:strip)
+    statements.pop while statements.last&.empty?
     unless (1..2).cover?(statements.length)
       raise Error, "expected setpos optionally followed by setang"
     end
