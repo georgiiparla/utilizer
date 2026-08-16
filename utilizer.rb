@@ -90,22 +90,46 @@ class Utilizer
     content = File.read(path, encoding: "bom|utf-8")
     spots = []
     errors = []
+    pending_description = nil
+    pending_line_number = nil
 
     content.each_line.with_index(1) do |line, line_number|
       line = line.strip
       next if line.empty?
 
-      begin
-        spots << parse_line(line)
-      rescue Error => e
-        errors << "line #{line_number}: #{e.message}"
+      if pending_description
+        if line.match?(/\Asetpos(?:\s|\z)/i)
+          parse_input_line("#{pending_description} #{line}", pending_line_number, spots, errors)
+          pending_description = nil
+          pending_line_number = nil
+          next
+        end
+
+        parse_input_line(pending_description, pending_line_number, spots, errors)
+        pending_description = nil
+        pending_line_number = nil
+      end
+
+      if line.end_with?(",")
+        pending_description = line
+        pending_line_number = line_number
+      else
+        parse_input_line(line, line_number, spots, errors)
       end
     end
+
+    parse_input_line(pending_description, pending_line_number, spots, errors) if pending_description
 
     errors << "input contains no spots" if spots.empty? && errors.empty?
     raise Error, "invalid input:\n  #{errors.join("\n  ")}" unless errors.empty?
 
     spots
+  end
+
+  def parse_input_line(line, line_number, spots, errors)
+    spots << parse_line(line)
+  rescue Error => e
+    errors << "line #{line_number}: #{e.message}"
   end
 
   def parse_line(line)
@@ -178,23 +202,23 @@ class Utilizer
       next_index = index == total ? 1 : index + 1
       previous_index = index == 1 ? total : index - 1
       commands = [
-        "bind rightarrow ut_s#{next_index}",
-        "bind leftarrow ut_s#{previous_index}",
-        "bind uparrow ut_s#{index}",
+        "bind rightarrow util#{next_index}",
+        "bind leftarrow util#{previous_index}",
+        "bind uparrow util#{index}",
         "bind downarrow ut_v#{index}",
         spot.command,
         "say_team [#{index}/#{total}] #{spot.description}"
       ]
 
-      lines << %(alias ut_s#{index} "#{commands.join("; ")}")
+      lines << %(alias util#{index} "#{commands.join("; ")}")
       look_down = spot.yaw ? "setang 89 #{spot.yaw} 0" : ""
       lines << %(alias ut_v#{index} "#{look_down}")
     end
 
     lines.concat([
-                   "bind rightarrow ut_s1",
-                   "bind leftarrow ut_s#{total}",
-                   "bind uparrow ut_s1",
+                   "bind rightarrow util1",
+                   "bind leftarrow util#{total}",
+                   "bind uparrow util1",
                    "bind downarrow ut_v1",
                    "echo Utilizer: #{total} spots loaded"
                  ])

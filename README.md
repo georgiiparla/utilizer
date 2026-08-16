@@ -18,6 +18,13 @@ CT spawn 1, setpos -512 1696 88.755043
 CT elbow, setpos -512 1696 88.842270;setang -26.949894 -101.927994
 ```
 
+The description and command may also be split after the comma, with optional blank lines between them:
+
+```text
+CT elbow,
+setpos -512 1696 88.842270;setang -26.949894 -101.927994
+```
+
 For a position-only spot, replaying it does not change the view angle and the Down
 key does nothing because there is no saved yaw to preserve.
 
@@ -31,7 +38,7 @@ utilizer spots -o instant_smokes.cfg
 
 Output is written in the current terminal directory and always replaces an existing file. The default output is `utilizer.cfg`; `.cfg` is appended when omitted.
 
-Put the generated config in the CS2 `game\csgo\cfg` folder, then run `exec utilizer` or the selected output name in the game console. Right and Left move through spots circularly, Up replays the current spot, and Down looks straight down while retaining its yaw.
+Put the generated config in the CS2 `game\csgo\cfg` folder, then run `exec utilizer` or the selected output name in the game console. Right and Left move through spots circularly, Up replays the current spot, and Down looks straight down while retaining its yaw. Enter `util1`, `util2`, and so on to jump directly to a numbered spot.
 
 To call `utilizer` from any terminal, add the directory containing `utilizer.exe` to your Windows `PATH`. CMD and PowerShell provide normal file path completion when you press Tab.
 
