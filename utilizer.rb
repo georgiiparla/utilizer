@@ -117,16 +117,30 @@ class Utilizer
     raise Error, "description cannot be empty" if description.empty?
 
     statements = command.split(";", -1).map(&:strip)
-    raise Error, "expected exactly setpos followed by setang" unless statements.length == 2
+    unless (1..2).cover?(statements.length)
+      raise Error, "expected setpos optionally followed by setang"
+    end
 
     position = parse_statement(statements[0], "setpos", 3)
-    angles = parse_statement(statements[1], "setang", 3)
+    angles = parse_angles(statements[1]) if statements.length == 2
 
     Spot.new(
       description: sanitize_description(description),
-      command: "setpos #{position.join(" ")}; setang #{angles.join(" ")}",
-      yaw: angles[1]
+      command: ["setpos #{position.join(" ")}", angles && "setang #{angles.join(" ")}"].compact.join("; "),
+      yaw: angles&.[](1)
     )
+  end
+
+  def parse_angles(statement)
+    parts = statement.split(/\s+/)
+    unless (3..4).cover?(parts.length) && parts.first&.casecmp?("setang")
+      raise Error, "expected setang with 2 or 3 numeric arguments"
+    end
+
+    angles = parts.drop(1)
+    validate_numbers!(angles, "setang")
+    angles << "0" if angles.length == 2
+    angles
   end
 
   def parse_statement(statement, expected_name, argument_count)
@@ -136,14 +150,18 @@ class Utilizer
     end
 
     arguments = parts.drop(1)
+    validate_numbers!(arguments, expected_name)
+
+    arguments
+  end
+
+  def validate_numbers!(arguments, statement_name)
     valid = arguments.all? do |argument|
       argument.match?(/\A#{NUMBER}\z/) && Float(argument).finite?
     rescue ArgumentError
       false
     end
-    raise Error, "#{expected_name} arguments must be finite numbers" unless valid
-
-    arguments
+    raise Error, "#{statement_name} arguments must be finite numbers" unless valid
   end
 
   def sanitize_description(description)
@@ -168,7 +186,8 @@ class Utilizer
       ]
 
       lines << %(alias ut_s#{index} "#{commands.join("; ")}")
-      lines << %(alias ut_v#{index} "setang 89 #{spot.yaw} 0")
+      look_down = spot.yaw ? "setang 89 #{spot.yaw} 0" : ""
+      lines << %(alias ut_v#{index} "#{look_down}")
     end
 
     lines.concat([
@@ -183,6 +202,6 @@ class Utilizer
   end
 end
 
-exit if defined?(Aibika)
+exit if defined?(Ocran)
 
 exit Utilizer.run(ARGV)

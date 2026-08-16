@@ -6,5 +6,5 @@ gem "colorize", "~> 1.1.0"
 gem "fiddle", "~> 1.1.8"
 
 group :development do
-  gem "aibika", "~> 1.3"
+  gem "ocran", "~> 1.4.3"
 end

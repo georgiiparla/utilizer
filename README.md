@@ -10,7 +10,16 @@ The input filename and extension do not matter. Put one spot on each nonblank li
 smoke ct, setpos -512.000000 1696.000000 88.755035;setang -30.877075 -101.814423 0.000000
 ```
 
-Descriptions may contain commas. Every nonblank line must contain exactly one `setpos` followed by one `setang`.
+Descriptions may contain commas. Every nonblank line must contain one `setpos`. The
+`setang` portion is optional, and its optional third (roll) value defaults to `0`:
+
+```text
+CT spawn 1, setpos -512 1696 88.755043
+CT elbow, setpos -512 1696 88.842270;setang -26.949894 -101.927994
+```
+
+For a position-only spot, replaying it does not change the view angle and the Down
+key does nothing because there is no saved yaw to preserve.
 
 ## Usage
 
@@ -32,5 +41,5 @@ From this folder on Windows:
 
 ```bat
 bundle install
-bundle exec aibika utilizer.rb --output build/utilizer.exe --console --icon logo.ico
+bundle exec ocran --output build/utilizer.exe --console --icon logo.ico utilizer.rb
 ```
