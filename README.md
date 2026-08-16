@@ -32,5 +32,5 @@ From this folder on Windows:
 
 ```bat
 bundle install
-bundle exec aibika utilizer.rb --output build/utilizer.exe --console
+bundle exec aibika utilizer.rb --output build/utilizer.exe --console --icon logo.ico
 ```
