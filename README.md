@@ -57,5 +57,5 @@ From this folder on Windows:
 
 ```bat
 bundle install
-bundle exec ocran --output build/utilizer.exe --console --icon logo.ico utilizer.rb
+bundle exec ocran --output build/utilizer.exe --console --icon logo.ico main.rb
 ```
