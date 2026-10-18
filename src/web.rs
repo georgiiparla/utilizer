@@ -322,6 +322,8 @@ struct WorkspaceTemplate<'a> {
 struct CapturesTemplate {
     captures: Vec<PendingCapture>,
     playlist_id: i64,
+    status: String,
+    polled: bool,
 }
 
 async fn view(app: &App, query: ViewQuery, feedback: String) -> Result<View> {
@@ -380,16 +382,18 @@ async fn view(app: &App, query: ViewQuery, feedback: String) -> Result<View> {
         .iter()
         .find(|c| Some(c.id) == query.capture)
         .map_or(0, |c| c.id);
-    let captures_html = CapturesTemplate {
-        captures: pending,
-        playlist_id: saved_id,
-    }
-    .render()?;
     let status = app
         .status
         .lock()
         .map_err(|_| invalid("Reader status unavailable"))?
         .clone();
+    let captures_html = CapturesTemplate {
+        captures: pending,
+        playlist_id: saved_id,
+        status: status.clone(),
+        polled: false,
+    }
+    .render()?;
     Ok(View {
         playlists,
         maps,
@@ -430,13 +434,22 @@ async fn home(
     page(&app, query, &headers, String::new()).await
 }
 
-async fn captures(State(app): State<Arc<App>>, Query(query): Query<ViewQuery>) -> Response {
+async fn captures(
+    State(app): State<Arc<App>>,
+    Query(query): Query<ViewQuery>,
+    headers: HeaderMap,
+) -> Response {
     match app.work(|store| store.list_captures()).await {
         Ok(captures) => html(&CapturesTemplate {
             captures,
             playlist_id: query.playlist.unwrap_or(0),
+            status: app.status.lock().map_or_else(
+                |_| "Reader status unavailable".into(),
+                |status| status.clone(),
+            ),
+            polled: true,
         }),
-        Err(error) => failure(error, &HeaderMap::new()),
+        Err(error) => failure(error, &headers),
     }
 }
 

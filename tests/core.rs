@@ -486,6 +486,25 @@ fn fake_install(root: &Path) {
 }
 
 #[test]
+fn discarded_capture_ids_cannot_be_reused_by_stale_forms() {
+    let directory = tempdir().unwrap();
+    let mut store = Store::open(directory.path().join("captures.sqlite3")).unwrap();
+    let playlist = store.create_playlist("de_mirage", "test", "Test").unwrap();
+    let first = store.record_capture(&sample_capture()).unwrap();
+    store.discard_capture(first).unwrap();
+    store.discard_capture(first).unwrap();
+    let second = store.record_capture(&sample_capture()).unwrap();
+    assert_ne!(first, second);
+    assert!(
+        store
+            .accept_capture(first, playlist.id, "Stale form", None)
+            .is_err()
+    );
+    assert_eq!(store.list_captures().unwrap()[0].id, second);
+    assert!(store.load_spots(playlist.id).unwrap().is_empty());
+}
+
+#[test]
 fn discovery_reads_steam_metadata_and_validates_installation() {
     let dir = tempdir().unwrap();
     let steam = dir.path().join("Steam");

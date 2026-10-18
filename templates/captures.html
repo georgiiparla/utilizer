@@ -10,3 +10,4 @@
   </div>
   {% endif %}
 </section>
+{% if polled %}<span id="reader-status" class="reader" role="status" hx-swap-oob="outerHTML"><i></i>{{ status }}</span>{% endif %}

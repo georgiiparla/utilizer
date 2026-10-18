@@ -33,7 +33,7 @@ async fn run() -> Result<()> {
             }
             "--help" | "-h" => {
                 println!(
-                    "utilizer [--cs2-path <CS2 installation>] [--no-browser]\nKeep this console open while using the local practice player."
+                    "utilizer [--cs2-path <CS2 installation>] [--no-browser]\nKeep this console open while using the local practice player.\n\nUninstall in PowerShell after closing Utilizer:\nirm https://raw.githubusercontent.com/georgiiparla/utilizer/main/uninstall.ps1 | iex\nPlaylists and exported CS2 files are kept."
                 );
                 return Ok(());
             }

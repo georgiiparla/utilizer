@@ -18,7 +18,22 @@ document.addEventListener('click', async function (event) {
     button.textContent = 'Press Ctrl+C';
   }
 });
-document.addEventListener('htmx:sendError', function () {
+function connectionError() {
   const feedback = document.getElementById('feedback');
   if (feedback) feedback.textContent = 'Cannot reach Utilizer. Check that its console is still open.';
+}
+document.addEventListener('htmx:sendError', connectionError);
+document.addEventListener('htmx:timeout', connectionError);
+
+document.addEventListener('htmx:beforeSwap', function (event) {
+  if (event.detail.xhr.status < 400) return;
+  // Only our escaped error fragment may replace feedback. Framework errors
+  // (invalid forms, oversized requests) must never replace the player/inbox.
+  if (event.detail.xhr.getResponseHeader('HX-Retarget') === '#feedback') {
+    event.detail.shouldSwap = true;
+  } else {
+    event.detail.shouldSwap = false;
+    const feedback = document.getElementById('feedback');
+    if (feedback) feedback.textContent = 'Cannot complete this request. Refresh the player and try again.';
+  }
 });

@@ -2,6 +2,7 @@ param([Parameter(Mandatory = $true)][string]$Executable)
 $ErrorActionPreference = 'Stop'
 $fixture = (Resolve-Path -LiteralPath $Executable).Path
 $installer = Join-Path $PSScriptRoot '..\install.ps1'
+$uninstaller = Join-Path $PSScriptRoot '..\uninstall.ps1'
 $targetRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\target'))
 $sandbox = Join-Path $targetRoot ('installer-test-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $sandbox 'tmp') -Force | Out-Null
@@ -61,8 +62,49 @@ try {
     try { & $installer } catch { $rejected = $_.ToString() -match 'Close the Utilizer console' }
     if (-not $rejected) { throw 'Running executable was not protected' }
     if (@(Get-ChildItem -LiteralPath $env:TEMP).Count -ne 0) { throw 'Temporary downloads were not cleaned up' }
+
+    $rejected = $false
+    try { & $uninstaller } catch { $rejected = $_.ToString() -match 'Close the Utilizer console' }
+    if (-not $rejected -or -not (Test-Path -LiteralPath $installed)) { throw 'Uninstall did not protect a running executable' }
+    $global:UtilizerTestRunning = $false
+    $data = Join-Path $sandbox 'Utilizer'
+    New-Item -ItemType Directory -Path $data | Out-Null
+    'playlist data' | Set-Content -LiteralPath (Join-Path $data 'utilizer.sqlite3')
+    'unrelated' | Set-Content -LiteralPath (Join-Path $data 'keep.txt')
+    'unrelated' | Set-Content -LiteralPath (Join-Path (Split-Path $installed) 'keep.txt')
+    $installDirectory = Split-Path $installed
+    [InstallerTestEnvironment]::UserPath = 'C:\Keep;' + $installDirectory + ';"' + $installDirectory + '\";C:\KeepToo'
+    & $uninstaller
+    if (Test-Path -LiteralPath $installed) { throw 'Uninstaller left the executable' }
+    if (-not (Test-Path -LiteralPath (Join-Path $data 'utilizer.sqlite3'))) { throw 'Default uninstall removed playlists' }
+    if ([InstallerTestEnvironment]::UserPath -cne 'C:\Keep;C:\KeepToo') { throw 'Uninstaller damaged PATH or left installation entries' }
+    & $uninstaller
+    & $uninstaller -RemoveData
+    if (Test-Path -LiteralPath (Join-Path $data 'utilizer.sqlite3')) { throw 'Explicit data removal did not remove database' }
+    if (-not (Test-Path -LiteralPath (Join-Path $data 'keep.txt')) -or
+        -not (Test-Path -LiteralPath (Join-Path $installDirectory 'keep.txt'))) { throw 'Uninstaller removed unrelated files' }
+
+    # A junction in the installation path must be refused before deleting files.
+    $realDirectory = Join-Path $sandbox 'linked-install-target'
+    foreach ($candidate in @($installDirectory, $realDirectory)) {
+        if (-not [IO.Path]::GetFullPath($candidate).StartsWith($sandbox + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Junction test target escaped its sandbox'
+        }
+    }
+    Move-Item -LiteralPath $installDirectory -Destination $realDirectory
+    'sentinel' | Set-Content -LiteralPath (Join-Path $realDirectory 'utilizer.exe')
+    New-Item -ItemType Junction -Path $installDirectory -Target $realDirectory | Out-Null
+    try {
+        $rejected = $false
+        try { & $uninstaller } catch { $rejected = $_.ToString() -match 'Refusing to uninstall through a link' }
+        if (-not $rejected -or -not (Test-Path -LiteralPath (Join-Path $realDirectory 'utilizer.exe'))) {
+            throw 'Uninstaller followed a junction'
+        }
+    } finally {
+        [IO.Directory]::Delete($installDirectory)
+    }
     if ([System.Environment]::GetEnvironmentVariable('Path', 'User') -ne $originalPath) { throw 'Real user PATH changed' }
-    Write-Host 'PASS: installer, repeat update, PATH deduplication, checksum rejection, running-process guard, and cleanup'
+    Write-Host 'PASS: install/update, checksum rejection, running-process guards, uninstall/repeat, PATH cleanup, optional data removal, unrelated-file protection, and junction refusal'
 } finally {
     [void]$accelerators::Remove('Environment')
     $resolved = [IO.Path]::GetFullPath($sandbox)

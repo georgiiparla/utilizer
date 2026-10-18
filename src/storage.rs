@@ -160,8 +160,14 @@ impl Store {
     }
 
     pub fn discard_capture(&self, id: i64) -> Result<()> {
-        self.connection
-            .execute("DELETE FROM captures WHERE id=?1 AND accepted=0", [id])?;
+        // Keep the consumed row so SQLite cannot reuse its ID for a new capture.
+        // An old form in another browser tab must never accept a different capture.
+        // The existing accepted flag means the capture is no longer pending;
+        // only a corresponding spot represents acceptance into a playlist.
+        self.connection.execute(
+            "UPDATE captures SET accepted=1 WHERE id=?1 AND accepted=0",
+            [id],
+        )?;
         Ok(())
     }
 
