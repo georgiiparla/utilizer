@@ -1,17 +1,12 @@
 {% extends "base.html" %}
 {% block body %}
 <main class="login">
-  <div class="brand">Utilizer<span>.</span></div>
-  <div class="login-art" aria-hidden="true"><span>↗</span><span>↗</span><span>↗</span></div>
-  <p class="eyebrow">Your practice, in position.</p>
-  <h1>Open your player</h1>
-  <p>Enter the four-digit code shown in the Utilizer console.</p>
+  <h1 class="brand">{% include "brand.html" %}</h1>
   <form method="post" action="/login">
-    <label for="code">Console code</label>
+    <label for="code">Code from the terminal</label>
     <input id="code" name="code" class="code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" autofocus required>
     {% if !error.is_empty() %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
-    <button class="primary wide" type="submit">Open player</button>
+    <button class="primary wide" type="submit">Unlock</button>
   </form>
-  <p class="fine">Local to this computer. No account needed.<br>Keep the Utilizer console open while you practice.</p>
 </main>
 {% endblock %}

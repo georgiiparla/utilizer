@@ -116,6 +116,15 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/action", post(action))
         .route("/captures", get(captures))
         .route(
+            "/assets/logo.ico",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/x-icon")],
+                    include_bytes!("../assets/logo.ico").as_slice(),
+                )
+            }),
+        )
+        .route(
             "/assets/style.css",
             get(|| async {
                 (
@@ -379,7 +388,7 @@ async fn view(app: &App, query: ViewQuery, feedback: String) -> Result<View> {
     maps.dedup();
     let playlist = playlists.iter().find(|p| p.id == saved_id);
     let map_code = playlist.map_or_else(|| "de_mirage".into(), |p| p.map_code.clone());
-    let playlist_name = playlist.map_or_else(|| "Your first playlist".into(), |p| p.name.clone());
+    let playlist_name = playlist.map_or_else(|| "No playlist".into(), |p| p.name.clone());
     let selected_index = spots
         .iter()
         .position(|s| Some(s.id) == saved_spot)
@@ -531,7 +540,7 @@ async fn action(
                 return Ok((
                     playlist.id,
                     0,
-                    "Playlist created. Sync it to prepare the console helpers.".into(),
+                    "Playlist created. Sync to CS2 to start capturing.".into(),
                 ));
             }
             let id = form.playlist.unwrap_or(0);
@@ -556,11 +565,7 @@ async fn action(
                     )?;
                     store.set_setting("selected_spot", &spot.to_string())?;
                     store.set_setting("selected_playlist", &id.to_string())?;
-                    return Ok((
-                        id,
-                        spot,
-                        "Spot saved. Sync the playlist to use it in CS2.".into(),
-                    ));
+                    return Ok((id, spot, "Spot saved. Sync to update CS2.".into()));
                 }
                 "discard" => {
                     store.discard_capture(
@@ -581,7 +586,7 @@ async fn action(
             Ok((
                 id,
                 spot,
-                "Synced. Run the setup command once in CS2; press ↑ to load this selection.".into(),
+                "Synced. Press ↑ in CS2 to load the selection.".into(),
             ))
         })
         .await;

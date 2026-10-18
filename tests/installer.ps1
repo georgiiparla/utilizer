@@ -27,6 +27,13 @@ $accelerators::Add('Environment', [InstallerTestEnvironment])
 if ((& ([scriptblock]::Create('[Environment]'))) -ne [InstallerTestEnvironment]) { throw 'Test environment isolation failed' }
 $global:UtilizerTestBadChecksum = $false
 $global:UtilizerTestRunning = $false
+$global:UtilizerTestProgress = [Collections.Generic.List[string]]::new()
+function Write-Progress {
+    param($Id, $Activity, $Status, $PercentComplete, [switch]$Completed)
+    if ($Id -ne 47825) { throw 'Unexpected installer progress ID' }
+    if ($Completed) { $global:UtilizerTestProgress.Add('completed') }
+    else { $global:UtilizerTestProgress.Add($Status) }
+}
 function Get-Process { param($Name, $ErrorAction) if ($global:UtilizerTestRunning) { [pscustomobject]@{ Name = 'utilizer' } } }
 function Invoke-RestMethod {
     param($Uri, $Headers)
@@ -45,7 +52,12 @@ function Invoke-WebRequest {
     } else { throw 'Unexpected network request' }
 }
 try {
-    & $installer
+    $ProgressPreference = 'SilentlyContinue'
+    # Exercise the same scope as irm | iex, including preference restoration.
+    Invoke-Expression ([IO.File]::ReadAllText($installer))
+    if ($ProgressPreference -ne 'SilentlyContinue') { throw 'Installer changed the caller progress preference' }
+    $expectedProgress = 'Checking latest release|Downloading v0.2.0|Verifying SHA-256|Installing executable|Updating user PATH|completed'
+    if (($global:UtilizerTestProgress -join '|') -ne $expectedProgress) { throw 'Installer stages missing or out of order' }
     $installed = Join-Path $sandbox 'Programs\Utilizer\utilizer.exe'
     $expected = (Get-FileHash -LiteralPath $fixture).Hash
     if ((Get-FileHash -LiteralPath $installed).Hash -ne $expected) { throw 'Installed bytes differ' }
@@ -53,9 +65,13 @@ try {
     $entries = @([InstallerTestEnvironment]::UserPath -split ';' | Where-Object { $_ })
     if ($entries.Count -ne 1) { throw 'PATH entry duplicated during update' }
     $global:UtilizerTestBadChecksum = $true
+    $global:UtilizerTestProgress.Clear()
     $rejected = $false
     try { & $installer } catch { $rejected = $_.ToString() -match 'checksum did not match' }
     if (-not $rejected) { throw 'Corrupt download was not rejected' }
+    if (($global:UtilizerTestProgress -join '|') -ne 'Checking latest release|Downloading v0.2.0|Verifying SHA-256|completed') {
+        throw 'Failed verification reported installation progress or left progress open'
+    }
     if ((Get-FileHash -LiteralPath $installed).Hash -ne $expected) { throw 'Failed update damaged existing installation' }
     $global:UtilizerTestRunning = $true
     $rejected = $false

@@ -1,5 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
+    io::IsTerminal,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -57,7 +58,7 @@ async fn run() -> Result<()> {
             _ => return Err(format!("Unknown argument: {arg}. Use --help.").into()),
         }
     }
-    println!("Utilizer {}", env!("CARGO_PKG_VERSION"));
+    print_banner();
     let listener = tokio::net::TcpListener::bind(web::ADDRESS)
         .await
         .map_err(|error| {
@@ -71,13 +72,9 @@ async fn run() -> Result<()> {
         })?;
     let (engine, store, _lock, installation) =
         tokio::task::spawn_blocking(move || bootstrap(cs2_path)).await??;
-    println!("CS2: {}", installation.root.display());
     let (app, code) = App::new(Arc::new(Mutex::new(store)), installation)?;
-    println!("\nOpen {}\nConsole code: {code}\n", web::URL);
-    println!("CS2 launch options: -condebug -conclearlog");
-    println!("Open a practice map, create a playlist in the player, and click Sync to CS2.");
-    println!("Then run in CS2: exec console_utilizer_rust/start");
-    println!("Keep this console open. Press Ctrl+C to stop.\n");
+    println!("  Open  {}\n  Code  {code}\n", web::URL);
+    println!("  Running. Keep this terminal open. Ctrl+C to stop.\n");
     let (stop, mut server_stop) = watch::channel(false);
     let mut worker = tokio::spawn(ingest(engine, app.clone(), stop.subscribe()));
     let router = web::router(app.clone());
@@ -108,6 +105,52 @@ async fn run() -> Result<()> {
     }
     tokio::task::spawn_blocking(move || drop(app)).await?;
     outcome
+}
+
+fn print_banner() {
+    let color = std::io::stdout().is_terminal()
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::env::var("TERM").as_deref() != Ok("dumb")
+        && enable_terminal_color();
+    let (gold, reset) = if color {
+        ("\x1b[33m", "\x1b[0m")
+    } else {
+        ("", "")
+    };
+    println!(
+        "\n{gold}  /\\ /\\\n  < X >  Utilizer {}\n  \\/ \\/{reset}\n",
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+#[cfg(windows)]
+fn enable_terminal_color() -> bool {
+    use std::ffi::c_void;
+    const STD_OUTPUT_HANDLE: u32 = -11_i32 as u32;
+    const ENABLE_PROCESSED_OUTPUT: u32 = 0x0001;
+    const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 0x0004;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetStdHandle(kind: u32) -> *mut c_void;
+        fn GetConsoleMode(handle: *mut c_void, mode: *mut u32) -> i32;
+        fn SetConsoleMode(handle: *mut c_void, mode: u32) -> i32;
+    }
+    let mut mode = 0;
+    // SAFETY: borrow stdout's OS handle, pass a valid writable mode pointer,
+    // and preserve all existing flags. Unsupported handles fail without ANSI.
+    unsafe {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        GetConsoleMode(handle, &mut mode) != 0
+            && SetConsoleMode(
+                handle,
+                mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+            ) != 0
+    }
+}
+
+#[cfg(not(windows))]
+fn enable_terminal_color() -> bool {
+    true
 }
 
 fn open_browser() {

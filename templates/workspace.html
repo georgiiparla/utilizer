@@ -1,8 +1,8 @@
 <main id="workspace" class="player">
-  <header class="topbar"><a href="/" class="brand">Utilizer<span>.</span></a><span class="subtitle">Practice player</span><span id="reader-status" class="reader" role="status"><i></i>{{ view.status }}</span><form method="post" action="/logout"><button class="quiet small">Lock</button></form></header>
+  <header class="topbar"><a href="/" class="brand">{% include "brand.html" %}</a><span id="reader-status" class="reader" role="status"><i></i>{{ view.status }}</span><form method="post" action="/logout"><button class="quiet small">Lock</button></form></header>
   <div class="library-layout">
     <aside class="library">
-      <h2 class="section-label">Your library</h2>
+      <h2 class="section-label">Library</h2>
       {% if !view.maps.is_empty() %}
       <form method="get" action="/" hx-get="/" hx-target="#workspace" hx-swap="outerHTML">
         <label for="map">Map</label>
@@ -24,43 +24,42 @@
           <button type="submit" class="wide">Create playlist</button>
         </form>
       </details>
-      <p class="library-foot">Built for a clean take.<br>Saved on this computer.</p>
     </aside>
     <section class="collection">
-      <div class="album"><div class="cover" aria-hidden="true"><span>{{ view.map_code }}</span><strong>↗</strong><span>Practice collection</span></div><div class="album-title"><p class="eyebrow">{{ view.map_code }}</p><h1>{{ view.playlist_name }}</h1><p>{{ view.spots.len() }} spots in your rotation</p></div>
+      <div class="album"><div class="album-title"><p class="eyebrow">{{ view.map_code }}</p><h1>{{ view.playlist_name }}</h1><p>{{ view.spots.len() }} spots</p></div>
       {% if view.playlist_id > 0 %}
       <form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="sync"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ view.selected }}"><button type="submit" class="primary">Sync to CS2</button></form>
       {% endif %}</div>
       <div id="feedback" aria-live="polite">{% if !view.feedback.is_empty() %}<p class="notice">{{ view.feedback }}</p>{% endif %}</div>
-      <details class="setup" {% if view.spots.is_empty() %}open{% endif %}>
+      <details class="setup">
         <summary>Console setup</summary>
-        <p>Launch CS2 with <code>-condebug -conclearlog</code> and enable its developer console. Open a local practice map, click <strong>Sync to CS2</strong>, then run:</p>
+        <p>CS2 launch options: <code>-condebug -conclearlog</code>. Enable the developer console. In a practice map, sync this playlist, then run:</p>
         <div class="command"><code id="setup-command">exec console_utilizer_rust/start</code><button type="button" data-copy="setup-command" class="small">Copy</button></div>
-        <p class="fine">This sets <kbd>←</kbd> / <kbd>→</kbd> to previous / next spot, <kbd>↑</kbd> to load the browser selection, and <kbd>F6</kbd> to capture. Existing bindings on these keys are replaced. Cheats must be allowed on the practice server.</p>
+        <p class="fine"><kbd>←</kbd> / <kbd>→</kbd> previous / next · <kbd>↑</kbd> load selection · <kbd>F6</kbd> capture. Replaces these key bindings. Requires cheats enabled.</p>
       </details>
-      <div class="track-heading"><span>#</span><span>Spot</span><span>Position</span></div>
+      <div class="track-heading"><span>#</span><span>Spot</span></div>
       <div class="tracks" role="list" aria-label="Playlist spots">
       {% for spot in view.spots %}
         <form role="listitem" method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML">
           <input type="hidden" name="kind" value="select"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ spot.id }}">
-          <button type="submit" class="track {% if spot.id == view.selected %}selected{% endif %}" aria-pressed="{% if spot.id == view.selected %}true{% else %}false{% endif %}"><span class="ordinal">{% if spot.id == view.selected %}▶{% else %}{{ spot.ordinal }}{% endif %}</span><span class="track-name">{{ spot.description }}</span><span class="track-meta">Saved ↗</span></button>
+          <button type="submit" class="track {% if spot.id == view.selected %}selected{% endif %}" aria-pressed="{% if spot.id == view.selected %}true{% else %}false{% endif %}"><span class="ordinal">{% if spot.id == view.selected %}▶{% else %}{{ spot.ordinal }}{% endif %}</span><span class="track-name">{{ spot.description }}</span></button>
         </form>
       {% else %}
-        <div class="empty"><span aria-hidden="true">＋</span><h2>A place for every lineup</h2><p>Create a playlist, sync the console helpers, then capture your first position with <kbd>F6</kbd>.</p></div>
+        <div class="empty"><h2>No spots</h2><p>{% if view.playlist_id > 0 %}Sync to CS2, run Console setup, then press <kbd>F6</kbd> to capture.{% else %}Create a playlist to begin.{% endif %}</p></div>
       {% endfor %}
       </div>
       {% if view.playlist_id > 0 %}{{ view.captures_html|safe }}{% endif %}
       {% if view.capture_id > 0 %}
-      <section class="capture-editor"><h3>Save capture #{{ view.capture_id }}</h3><form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="accept"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="capture" value="{{ view.capture_id }}"><label for="description">Spot name / throw notes</label><textarea id="description" name="description" placeholder="Window from T spawn — align with the right-hand wall" maxlength="2000" required></textarea><label for="reference">Reference link (optional)</label><input id="reference" name="link" type="url" placeholder="https://…" maxlength="2048"><button class="primary" type="submit">Save to {{ view.playlist_name }}</button></form><form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="discard"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="capture" value="{{ view.capture_id }}"><button type="submit" class="quiet small">Discard this capture</button></form></section>
+      <section class="capture-editor"><h3>Save capture #{{ view.capture_id }}</h3><form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="accept"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="capture" value="{{ view.capture_id }}"><label for="description">Spot name / throw notes</label><textarea id="description" name="description" maxlength="2000" required></textarea><label for="reference">Reference link (optional)</label><input id="reference" name="link" type="url" placeholder="https://…" maxlength="2048"><button class="primary" type="submit">Save spot</button></form><form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="discard"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="capture" value="{{ view.capture_id }}"><button type="submit" class="quiet small">Discard</button></form></section>
       {% endif %}
     </section>
   </div>
-  <footer class="transport"><div class="now-playing"><span class="eyebrow">Selected spot</span><strong>{{ view.description }}</strong>{% if !view.link.is_empty() %}<a href="{{ view.link }}" target="_blank" rel="noopener noreferrer">Open reference ↗</a>{% endif %}</div>
+  <footer class="transport"><div class="now-playing"><span class="eyebrow">Selected spot</span><strong>{{ view.description }}</strong>{% if !view.link.is_empty() %}<a href="{{ view.link }}" target="_blank" rel="noopener noreferrer">Reference ↗</a>{% endif %}</div>
     <div class="transport-controls">
       <form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="select"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ view.previous }}"><button aria-label="Previous spot" title="Previous spot" {% if view.selected == 0 %}disabled{% endif %}>←</button></form>
-      <form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="select"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ view.selected }}"><button class="primary" {% if view.selected == 0 %}disabled{% endif %}>Load selection</button></form>
+      <form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="select"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ view.selected }}"><button class="primary" {% if view.selected == 0 %}disabled{% endif %}>Sync selection</button></form>
       <form method="post" action="/action" hx-post="/action" hx-target="#workspace" hx-swap="outerHTML"><input type="hidden" name="kind" value="select"><input type="hidden" name="playlist" value="{{ view.playlist_id }}"><input type="hidden" name="spot" value="{{ view.next }}"><button aria-label="Next spot" title="Next spot" {% if view.selected == 0 %}disabled{% endif %}>→</button></form>
     </div>
-    <span class="transport-hint">Then press <kbd>↑</kbd> in CS2</span>
+    <span class="transport-hint"><kbd>↑</kbd> Load in CS2</span>
   </footer>
 </main>

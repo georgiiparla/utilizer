@@ -45,6 +45,10 @@ and installed file hashes are recorded in `.agents/skill-sources.json`.
 - Use the selected compact music-player interface: map/playlist selection,
   numbered spots, and bottom selected-spot controls. Fit the small 4:3 Steam
   overlay. Prioritize clear actions, keyboard focus, and readable spacing.
+- This is a utility: no slogans, promotional copy, decorative album artwork,
+  or landing-page sections. Use the existing gold icon. Keep setup instructions
+  in expandable help and label actions by what they actually do. Installation
+  must show its stages and download progress; keep console output concise.
 - Honor the library version selected for the project; do not mix HTMX 2 and 4
   APIs just because the skill documents both. Escape user content in templates.
 - Bind to `127.0.0.1:47825` and fail clearly if occupied. Preserve the planned
