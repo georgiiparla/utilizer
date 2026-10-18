@@ -105,5 +105,8 @@ fn installed_command_removes_itself_offline_and_purge_removes_both_folders() {
         .unwrap();
     assert!(!portable.status.success());
     assert!(String::from_utf8_lossy(&portable.stderr).contains("installed copy"));
-    assert!(!data.exists(), "Uninstall must not bootstrap the application");
+    assert!(
+        !data.exists(),
+        "Uninstall must not bootstrap the application"
+    );
 }
