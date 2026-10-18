@@ -50,9 +50,9 @@ and installed file hashes are recorded in `.agents/skill-sources.json`.
 - Bind to `127.0.0.1:47825` and fail clearly if occupied. Preserve the planned
   console-code login and server-run sessions. Add the smallest browser slice
   only when requested; skill installation does not authorize starting it.
-- GitHub Actions currently performs CI checks and uploads build artifacts only.
-  Do not create tags or GitHub Releases, including drafts, before the UI exists
-  and the user requests a release.
+- GitHub Actions runs Windows CI and prepares versioned releases. The user has
+  authorized the first UI release and making the repository public for the
+  PowerShell installer. Future releases still need a user request.
 
 ## Verification
 

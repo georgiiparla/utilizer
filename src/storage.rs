@@ -159,6 +159,12 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?)
     }
 
+    pub fn discard_capture(&self, id: i64) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM captures WHERE id=?1 AND accepted=0", [id])?;
+        Ok(())
+    }
+
     /// Returns the existing spot on repeated acceptance into the same playlist.
     /// A retry cannot move an already accepted capture to a different playlist.
     pub fn accept_capture(

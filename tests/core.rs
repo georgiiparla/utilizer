@@ -410,6 +410,53 @@ fn cfg_output_is_deterministic_and_descriptions_cannot_inject_commands() {
 }
 
 #[test]
+fn player_cfgs_wrap_navigation_and_point_to_the_browser_selection() {
+    let dir = tempdir().unwrap();
+    let mut store = Store::open(dir.path().join("db")).unwrap();
+    let playlist = store
+        .create_playlist("de_mirage", "practice", "Practice")
+        .unwrap();
+    let first = store.record_capture(&sample_capture()).unwrap();
+    let a = store
+        .accept_capture(first, playlist.id, "First", None)
+        .unwrap();
+    let second = store.record_capture(&sample_capture()).unwrap();
+    let b = store
+        .accept_capture(second, playlist.id, "Second", None)
+        .unwrap();
+    let spots = store.load_spots(playlist.id).unwrap();
+    let files = cfg::render_player(&playlist, &spots, Some(b)).unwrap();
+    let content = |name: &str| {
+        files
+            .iter()
+            .find(|file| file.filename == name)
+            .unwrap()
+            .content
+            .as_str()
+    };
+    assert!(content("current.cfg").ends_with(&format!("exec console_utilizer_rust/spot_{b}\n")));
+    assert!(content(&format!("spot_{a}.cfg")).contains(&format!(
+        "alias ut_prev \"exec console_utilizer_rust/spot_{b}\""
+    )));
+    assert!(content(&format!("spot_{b}.cfg")).contains(&format!(
+        "alias ut_next \"exec console_utilizer_rust/spot_{a}\""
+    )));
+    assert!(content("start.cfg").contains("bind F6 ut_save"));
+    assert!(cfg::render_player(&playlist, &spots, Some(999)).is_err());
+    let empty = cfg::render_player(&playlist, &[], None).unwrap();
+    assert!(
+        empty
+            .iter()
+            .find(|file| file.filename == "current.cfg")
+            .unwrap()
+            .content
+            .contains("capture and accept a spot first")
+    );
+    let paths = cfg::export(dir.path(), &files).unwrap();
+    assert_eq!(paths.len(), 6);
+}
+
+#[test]
 fn cfg_export_protects_unrelated_files_and_replaces_only_owned_output() {
     let dir = tempdir().unwrap();
     let files = vec![CfgFile {

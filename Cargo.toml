@@ -1,17 +1,21 @@
 [package]
 name = "utilizer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 description = "Local CS2 capture and training-config core"
 license = "MIT"
 
 [dependencies]
+askama = "0.16"
+axum = { version = "0.8", default-features = false, features = ["form", "query", "http1", "tokio"] }
+getrandom = "0.3"
+serde = { version = "1", features = ["derive"] }
 notify = "8.2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 same-file = "1.0"
 tempfile = "3"
-tokio = { version = "1", features = ["rt", "macros", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "signal", "sync", "time"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

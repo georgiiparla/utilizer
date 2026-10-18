@@ -64,6 +64,52 @@ pub fn render(playlist: &Playlist, spots: &[Spot]) -> Result<Vec<CfgFile>> {
     ])
 }
 
+/// Practice player files are generated only by an explicit browser action.
+pub fn render_player(
+    playlist: &Playlist,
+    spots: &[Spot],
+    selected: Option<i64>,
+) -> Result<Vec<CfgFile>> {
+    let mut files = render(playlist, spots)?;
+    let selected = match selected {
+        Some(id) => Some(
+            spots
+                .iter()
+                .find(|s| s.id == id)
+                .ok_or_else(|| invalid("Spot does not belong to this playlist"))?,
+        ),
+        None => spots.first(),
+    };
+    let exec = |id| format!("exec {OUTPUT_DIRECTORY}/spot_{id}");
+    for (index, spot) in spots.iter().enumerate() {
+        let next = &spots[(index + 1) % spots.len()];
+        let previous = &spots[(index + spots.len() - 1) % spots.len()];
+        files.push(CfgFile {
+            filename: format!("spot_{}.cfg", spot.id),
+            content: format!("{GENERATED_HEADER}\nsv_cheats 1\necholn \"{PLAYLIST_MARKER} {}\"\nalias ut_next \"{}\"\nalias ut_prev \"{}\"\n{}\n", playlist.slug, exec(next.id), exec(previous.id), spot.position.command()),
+        });
+    }
+    let current = selected
+        .map(|s| exec(s.id))
+        .unwrap_or_else(|| "echoln \"Utilizer: capture and accept a spot first\"".into());
+    files[0].content = format!(
+        "{GENERATED_HEADER}\necholn \"{PLAYLIST_MARKER} {}\"\n{current}\n",
+        playlist.slug
+    );
+    files.push(CfgFile {
+        filename: "current.cfg".into(),
+        content: format!(
+            "{GENERATED_HEADER}\necholn \"{PLAYLIST_MARKER} {}\"\n{current}\n",
+            playlist.slug
+        ),
+    });
+    files.push(CfgFile {
+        filename: "start.cfg".into(),
+        content: format!("{GENERATED_HEADER}\nsv_cheats 1\nalias ut_save \"exec {OUTPUT_DIRECTORY}/ut_save\"\nalias ut_current \"exec {OUTPUT_DIRECTORY}/current\"\nalias ut_next ut_current\nalias ut_prev ut_current\nbind RIGHTARROW ut_next\nbind LEFTARROW ut_prev\nbind UPARROW ut_current\nbind F6 ut_save\nexec {OUTPUT_DIRECTORY}/current\n"),
+    });
+    Ok(files)
+}
+
 /// The caller explicitly supplies a validated CS2 cfg root. No startup writes.
 pub fn export(cfg_root: &Path, files: &[CfgFile]) -> Result<Vec<PathBuf>> {
     let cfg_root = cfg_root.canonicalize()?;
