@@ -1,0 +1,3 @@
+https://github.com/setposgg/cs2-minimaps
+3abd9974d480a4c62b22e18ec7b262f2ed9630e4
+Complete source snapshot (no Git metadata).

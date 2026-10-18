@@ -10,6 +10,8 @@ pub struct Engine {
     // Retain captures if SQLite is temporarily unavailable. Do not advance the
     // reader again until these writes succeed.
     unsaved: Vec<crate::protocol::Capture>,
+    unsaved_maps: Vec<Option<String>>,
+    map_dirty: bool,
 }
 
 impl Engine {
@@ -18,6 +20,8 @@ impl Engine {
             monitor: LogMonitor::start(log_path)?,
             parser: Parser::new(),
             unsaved: Default::default(),
+            unsaved_maps: Vec::new(),
+            map_dirty: true,
         })
     }
 
@@ -33,16 +37,24 @@ impl Engine {
         if batch.reset {
             self.parser.reset();
         }
+        let before = self.parser.active_map().map(str::to_owned);
         self.unsaved = self.parser.feed(&batch.bytes, now);
+        self.unsaved_maps = self.parser.take_capture_maps();
+        self.map_dirty |= batch.reset || before.as_deref() != self.parser.active_map();
         self.flush(store)
     }
 
     fn flush(&mut self, store: &Store) -> Result<Vec<i64>> {
+        if self.map_dirty {
+            store.set_setting("active_map", self.parser.active_map().unwrap_or(""))?;
+            self.map_dirty = false;
+        }
         if self.unsaved.is_empty() {
             return Ok(Vec::new());
         }
-        let ids = store.record_captures(&self.unsaved)?;
+        let ids = store.record_captures(&self.unsaved, &self.unsaved_maps)?;
         self.unsaved.clear();
+        self.unsaved_maps.clear();
         Ok(ids)
     }
 }

@@ -16,12 +16,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{
-    Result, cfg,
-    discovery::Installation,
-    invalid,
-    storage::{PendingCapture, Playlist, Spot, Store},
-};
+use crate::{Result, discovery::Installation, invalid, maps, protocol::Position, storage::Store};
+
+mod editor;
 
 pub const ADDRESS: &str = "127.0.0.1:47825";
 pub const URL: &str = "http://127.0.0.1:47825";
@@ -32,6 +29,8 @@ pub struct App {
     pub installation: Installation,
     pub status: Mutex<String>,
     auth: Mutex<Auth>,
+    #[cfg(feature = "dev")]
+    pub(crate) preview: Option<crate::dev::Preview>,
 }
 
 struct Auth {
@@ -39,6 +38,8 @@ struct Auth {
     failures: u8,
     blocked_until: Option<Instant>,
     sessions: VecDeque<String>,
+    #[cfg(feature = "dev")]
+    preview_session: Option<String>,
 }
 
 fn random_bytes() -> Result<[u8; 32]> {
@@ -65,6 +66,8 @@ impl Auth {
             return Err(invalid("That code does not match. Check the Utilizer console.").into());
         }
         let token: String = random_bytes()?.iter().map(|b| format!("{b:02x}")).collect();
+        #[cfg(feature = "dev")]
+        let token = self.preview_session.clone().unwrap_or(token);
         self.failures = 0;
         if self.sessions.len() == 32 {
             self.sessions.pop_front();
@@ -75,6 +78,14 @@ impl Auth {
 }
 
 impl App {
+    pub fn requires_auth(&self) -> bool {
+        #[cfg(feature = "dev")]
+        if let Some(preview) = &self.preview {
+            return preview.require_auth;
+        }
+        true
+    }
+
     pub fn new(store: SharedStore, installation: Installation) -> Result<(Arc<Self>, String)> {
         let bytes = random_bytes()?;
         let code = format!("{:04}", u32::from_ne_bytes(bytes[..4].try_into()?) % 10_000);
@@ -83,6 +94,8 @@ impl App {
             failures: 0,
             blocked_until: None,
             sessions: VecDeque::new(),
+            #[cfg(feature = "dev")]
+            preview_session: None,
         };
         Ok((
             Arc::new(Self {
@@ -90,9 +103,29 @@ impl App {
                 installation,
                 status: Mutex::new("Waiting for console output".into()),
                 auth: Mutex::new(auth),
+                #[cfg(feature = "dev")]
+                preview: None,
             }),
             code,
         ))
+    }
+
+    #[cfg(feature = "dev")]
+    pub fn new_preview(
+        store: SharedStore,
+        installation: Installation,
+        preview: crate::dev::Preview,
+    ) -> Result<(Arc<Self>, String)> {
+        let (mut app, code) = Self::new(store, installation)?;
+        let inner = Arc::get_mut(&mut app).expect("new app has one owner");
+        let auth = inner
+            .auth
+            .get_mut()
+            .map_err(|_| invalid("Login lock failed"))?;
+        auth.sessions.push_back(preview.session().to_owned());
+        auth.preview_session = Some(preview.session().to_owned());
+        inner.preview = Some(preview);
+        Ok((app, code))
     }
 
     async fn work<T: Send + 'static>(
@@ -109,12 +142,50 @@ impl App {
 }
 
 pub fn router(app: Arc<App>) -> Router {
-    Router::new()
+    let router = Router::new()
+        .route("/editor", get(editor::show))
+        .route("/manage", post(editor::manage))
         .route("/", get(home))
+        .route(
+            "/manifest.webmanifest",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/manifest+json")],
+                    include_str!("../assets/manifest.webmanifest"),
+                )
+            }),
+        )
+        .route(
+            "/assets/icon-192.png",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/png")],
+                    include_bytes!("../assets/icon-192.png").as_slice(),
+                )
+            }),
+        )
+        .route(
+            "/assets/icon-512.png",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/png")],
+                    include_bytes!("../assets/icon-512.png").as_slice(),
+                )
+            }),
+        )
         .route("/login", get(login_page).post(login))
         .route("/logout", post(logout))
-        .route("/action", post(action))
-        .route("/captures", get(captures))
+        .route("/locations", get(locations))
+        .route("/assets/maps/{file}", get(map_asset))
+        .route(
+            "/assets/fonts/plex.ttf",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "font/ttf")],
+                    include_bytes!("../assets/fonts/IBMPlexSans.ttf").as_slice(),
+                )
+            }),
+        )
         .route(
             "/assets/logo.ico",
             get(|| async {
@@ -126,20 +197,44 @@ pub fn router(app: Arc<App>) -> Router {
         )
         .route(
             "/assets/style.css",
-            get(|| async {
+            get(|State(_app): State<Arc<App>>| async move {
+                #[cfg(feature = "dev")]
+                if _app.preview.is_some() {
+                    return crate::dev::asset("style.css", "text/css; charset=utf-8").await;
+                }
                 (
                     [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
                     include_str!("../assets/style.css"),
                 )
+                    .into_response()
+            }),
+        )
+        .route(
+            "/assets/theme.js",
+            get(|State(_app): State<Arc<App>>| async move {
+                #[cfg(feature = "dev")]
+                if _app.preview.is_some() {
+                    return crate::dev::asset("theme.js", "text/javascript; charset=utf-8").await;
+                }
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../assets/theme.js"),
+                )
+                    .into_response()
             }),
         )
         .route(
             "/assets/app.js",
-            get(|| async {
+            get(|State(_app): State<Arc<App>>| async move {
+                #[cfg(feature = "dev")]
+                if _app.preview.is_some() {
+                    return crate::dev::asset("app.js", "text/javascript; charset=utf-8").await;
+                }
                 (
                     [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
                     include_str!("../assets/app.js"),
                 )
+                    .into_response()
             }),
         )
         .route(
@@ -150,7 +245,10 @@ pub fn router(app: Arc<App>) -> Router {
                     include_str!("../assets/htmx-2.0.8.min.js"),
                 )
             }),
-        )
+        );
+    #[cfg(feature = "dev")]
+    let router = crate::dev::routes(router, &app);
+    router
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
@@ -191,7 +289,11 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
                 .into_response(),
         );
     }
-    if request.method() != axum::http::Method::GET && !valid_origin(request.headers()) {
+    if !matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD
+    ) && !valid_origin(request.headers())
+    {
         let mut response = if request.uri().path() == "/login" {
             html(&LoginTemplate {
                 error: "The browser could not verify this local request. Reload the login page and enter the console code again.",
@@ -202,10 +304,14 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
         *response.status_mut() = StatusCode::FORBIDDEN;
         return security_headers(response);
     }
-    let public = request.uri().path() == "/login" || request.uri().path().starts_with("/assets/");
-    let authenticated = app.auth.lock().ok().is_some_and(|auth| {
-        session(request.headers()).is_some_and(|s| auth.sessions.iter().any(|known| known == s))
-    });
+    let public = matches!(request.uri().path(), "/login" | "/manifest.webmanifest")
+        || request.uri().path().starts_with("/assets/");
+    #[cfg(feature = "dev")]
+    let public = public || (app.preview.is_some() && request.uri().path() == "/__dev/revision");
+    let authenticated = !app.requires_auth()
+        || app.auth.lock().ok().is_some_and(|auth| {
+            session(request.headers()).is_some_and(|s| auth.sessions.iter().any(|known| known == s))
+        });
     let response = if !public && !authenticated {
         if request.headers().contains_key("hx-request") {
             (StatusCode::UNAUTHORIZED, [("hx-redirect", "/login")]).into_response()
@@ -214,6 +320,12 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
         }
     } else {
         next.run(request).await
+    };
+    #[cfg(feature = "dev")]
+    let response = if app.preview.is_some() {
+        crate::dev::enhance(response).await
+    } else {
+        response
     };
     security_headers(response)
 }
@@ -235,7 +347,7 @@ fn security_headers(mut response: Response) -> Response {
         // no-referrer makes browsers send Origin: null for these submissions.
         "same-origin".parse().expect("static header"),
     );
-    headers.insert("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'".parse().expect("static header"));
+    headers.insert("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'".parse().expect("static header"));
     response
 }
 
@@ -255,7 +367,10 @@ fn html(template: &impl Template) -> Response {
     }
 }
 
-async fn login_page() -> Response {
+async fn login_page(State(app): State<Arc<App>>) -> Response {
+    if !app.requires_auth() {
+        return Redirect::to("/").into_response();
+    }
     html(&LoginTemplate { error: "" })
 }
 
@@ -310,181 +425,265 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
 
 #[derive(Default, Deserialize)]
 struct ViewQuery {
-    playlist: Option<i64>,
-    spot: Option<i64>,
+    point: Option<String>,
     map: Option<String>,
-    capture: Option<i64>,
+    area: Option<String>,
+    revision: Option<String>,
+    mode: Option<String>,
 }
 
-struct View {
-    playlists: Vec<Playlist>,
-    maps: Vec<String>,
-    spots: Vec<Spot>,
-    playlist_id: i64,
-    playlist_name: String,
-    map_code: String,
-    selected: i64,
-    description: String,
-    link: String,
-    previous: i64,
-    next: i64,
-    capture_id: i64,
-    captures_html: String,
-    feedback: String,
-    status: String,
+struct MapPoint {
+    key: String,
+    name: String,
+    command: String,
+    world: [f64; 3],
+    x: f64,
+    y: f64,
+    placed: bool,
+    reason: &'static str,
+    selected: bool,
+    area: String,
+}
+
+impl MapPoint {
+    fn new(
+        key: String,
+        name: String,
+        position: Position,
+        map: Option<&str>,
+        selected_map: &maps::Map,
+    ) -> Self {
+        let projected = (map == Some(selected_map.code) && selected_map.artwork.is_some())
+            .then(|| selected_map.calibration.project(position.origin))
+            .flatten();
+        let reason = if map.is_none() {
+            "Map unknown"
+        } else if map != Some(selected_map.code) {
+            "Another map"
+        } else if selected_map.artwork.is_none() {
+            "Map artwork unavailable"
+        } else if projected.is_none() {
+            "Outside map bounds"
+        } else {
+            ""
+        };
+        let [x, y] = projected.unwrap_or([0.0, 0.0]);
+        Self {
+            key,
+            name,
+            command: position.command(),
+            world: position.origin,
+            x,
+            y,
+            placed: projected.is_some(),
+            reason,
+            selected: false,
+            area: String::new(),
+        }
+    }
+}
+
+struct Area {
+    key: String,
+    path: String,
+    count: usize,
+    selected: bool,
+}
+struct MapView {
+    mode: &'static str,
+    points: Vec<MapPoint>,
+    selected: String,
+    map: &'static maps::Map,
+    maps: &'static [maps::Map],
+    areas: Vec<Area>,
+    area: String,
+    detected: String,
+    revision: String,
+}
+
+async fn map_asset(axum::extract::Path(code): axum::extract::Path<String>) -> Response {
+    let Some(name) = code.strip_suffix(".svg") else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let (name, dark) = name
+        .strip_suffix("-dark")
+        .map_or((name, false), |name| (name, true));
+    match maps::find(&format!("de_{name}"))
+        .and_then(|map| if dark { map.dark_artwork } else { map.artwork })
+    {
+        Some(artwork) => ([(header::CONTENT_TYPE, "image/svg+xml")], artwork).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 #[derive(Template)]
 #[template(path = "page.html")]
 struct PageTemplate<'a> {
-    view: &'a View,
+    view: &'a MapView,
 }
 
 #[derive(Template)]
-#[template(path = "workspace.html")]
-struct WorkspaceTemplate<'a> {
-    view: &'a View,
+#[template(path = "locations.html")]
+struct LocationsTemplate<'a> {
+    view: &'a MapView,
 }
 
-#[derive(Template)]
-#[template(path = "captures.html")]
-struct CapturesTemplate {
-    captures: Vec<PendingCapture>,
-    playlist_id: i64,
-    status: String,
-    polled: bool,
-}
-
-async fn view(app: &App, query: ViewQuery, feedback: String) -> Result<View> {
-    let (playlists, spots, pending, saved_id, saved_spot) = app
+async fn map_view(app: &App, query: ViewQuery) -> Result<MapView> {
+    let detected = app
+        .work(|store| store.setting("active_map"))
+        .await?
+        .unwrap_or_default();
+    let map = if !detected.is_empty() {
+        maps::find(&detected)
+    } else {
+        query.map.as_deref().and_then(maps::find)
+    }
+    .unwrap_or(&maps::MAPS[1]);
+    let mode = match query.mode.as_deref() {
+        None | Some("spots") => "spots",
+        Some("captures") => "captures",
+        _ => return Err(invalid("Unknown mode").into()),
+    };
+    let mut points = app
         .work(move |store| {
-            let playlists = store.list_playlists()?;
-            let id = query.playlist.or(store
-                .setting("selected_playlist")?
-                .and_then(|s| s.parse().ok()));
-            let selected = playlists
-                .iter()
-                .find(|p| Some(p.id) == id && query.map.as_ref().is_none_or(|m| *m == p.map_code))
-                .or_else(|| {
-                    playlists
-                        .iter()
-                        .find(|p| query.map.as_ref().is_none_or(|m| *m == p.map_code))
-                });
-            let id = selected.map_or(0, |p| p.id);
-            let spot = query
-                .spot
-                .or(store.setting("selected_spot")?.and_then(|s| s.parse().ok()));
-            Ok((
-                playlists,
-                store.load_spots(id)?,
-                store.list_captures()?,
-                id,
-                spot,
-            ))
+            let mut points = Vec::new();
+            if mode == "spots" {
+                for spot in store.map_spots(map.code)? {
+                    points.push(MapPoint::new(
+                        format!("spot-{}", spot.id),
+                        spot.description,
+                        spot.position,
+                        Some(map.code),
+                        map,
+                    ));
+                }
+            } else {
+                for pending in store.list_captures()? {
+                    let recorded = store.capture_map(pending.id)?;
+                    let capture_map = recorded.as_deref();
+                    if capture_map != Some(map.code) {
+                        continue;
+                    }
+                    points.push(MapPoint::new(
+                        format!("capture-{}", pending.id),
+                        format!("Capture #{}", pending.id),
+                        pending.capture.position,
+                        capture_map,
+                        map,
+                    ));
+                }
+            }
+            Ok(points)
         })
         .await?;
-    let mut maps: Vec<_> = playlists.iter().map(|p| p.map_code.clone()).collect();
-    maps.sort();
-    maps.dedup();
-    let playlist = playlists.iter().find(|p| p.id == saved_id);
-    let map_code = playlist.map_or_else(|| "de_mirage".into(), |p| p.map_code.clone());
-    let playlist_name = playlist.map_or_else(|| "No playlist".into(), |p| p.name.clone());
-    let selected_index = spots
+    let coords: Vec<_> = points
         .iter()
-        .position(|s| Some(s.id) == saved_spot)
-        .unwrap_or(0);
-    let current = spots.get(selected_index);
-    let selected = current.map_or(0, |s| s.id);
-    let description = current.map_or_else(|| "No spot selected".into(), |s| s.description.clone());
-    let link = current.and_then(|s| s.link.clone()).unwrap_or_default();
-    let previous = if spots.is_empty() {
-        0
-    } else {
-        spots[(selected_index + spots.len() - 1) % spots.len()].id
-    };
-    let next = if spots.is_empty() {
-        0
-    } else {
-        spots[(selected_index + 1) % spots.len()].id
-    };
-    let capture_id = pending
-        .iter()
-        .find(|c| Some(c.id) == query.capture)
-        .map_or(0, |c| c.id);
-    let status = app
-        .status
-        .lock()
-        .map_err(|_| invalid("Reader status unavailable"))?
-        .clone();
-    let captures_html = CapturesTemplate {
-        captures: pending,
-        playlist_id: saved_id,
-        status: status.clone(),
-        polled: false,
+        .enumerate()
+        .filter(|(_, p)| p.placed)
+        .map(|(i, p)| (i, [p.x, p.y, p.world[2]]))
+        .collect();
+    let mut areas = Vec::new();
+    for indices in maps::groups(&coords) {
+        let key = indices
+            .iter()
+            .map(|&i| points[i].key.as_str())
+            .min()
+            .unwrap_or("")
+            .to_owned();
+        let mut path = String::new();
+        for i in indices.iter().copied() {
+            let point = &mut points[i];
+            point.area = key.clone();
+            // A single SVG path paints the union without dark overlap seams.
+            path.push_str(&format!(
+                "M {} {} h {} v {} h -{} Z ",
+                point.x - maps::ZONE_SIZE / 2.0,
+                point.y - maps::ZONE_SIZE / 2.0,
+                maps::ZONE_SIZE,
+                maps::ZONE_SIZE,
+                maps::ZONE_SIZE
+            ));
+        }
+        areas.push(Area {
+            selected: query.area.as_deref() == Some(&key),
+            key,
+            path,
+            count: indices.len(),
+        });
     }
-    .render()?;
-    Ok(View {
-        playlists,
-        maps,
-        spots,
-        playlist_id: saved_id,
-        playlist_name,
-        map_code,
+    let area = query
+        .area
+        .filter(|key| areas.iter().any(|area| &area.key == key))
+        .unwrap_or_default();
+    points.retain(|point| !area.is_empty() && point.area == area);
+    let selected = points
+        .iter()
+        .find(|p| Some(&p.key) == query.point.as_ref())
+        .or_else(|| points.last())
+        .map(|p| p.key.clone())
+        .unwrap_or_default();
+    for point in &mut points {
+        point.selected = point.key == selected;
+    }
+    use std::hash::{Hash, Hasher};
+    let mut revision = std::collections::hash_map::DefaultHasher::new();
+    (map.code, mode, &detected, &selected, &area).hash(&mut revision);
+    for point in &points {
+        (&point.key, &point.name, &point.command, point.reason).hash(&mut revision);
+    }
+    for region in &areas {
+        (&region.key, &region.path, region.count).hash(&mut revision);
+    }
+    Ok(MapView {
+        mode,
+        points,
         selected,
-        description,
-        link,
-        previous,
-        next,
-        capture_id,
-        captures_html,
-        feedback,
-        status,
+        map,
+        maps: &maps::MAPS,
+        areas,
+        area,
+        detected,
+        revision: format!("{:x}", revision.finish()),
     })
 }
 
-async fn page(app: &App, query: ViewQuery, headers: &HeaderMap, feedback: String) -> Response {
-    match view(app, query, feedback).await {
-        Ok(view) => {
-            if headers.contains_key("hx-request") {
-                html(&WorkspaceTemplate { view: &view })
-            } else {
-                html(&PageTemplate { view: &view })
-            }
-        }
-        Err(error) => failure(error, headers),
+async fn home(State(app): State<Arc<App>>, Query(query): Query<ViewQuery>) -> Response {
+    match map_view(&app, query).await {
+        Ok(view) => html(&PageTemplate { view: &view }),
+        Err(error) => failure(error, &HeaderMap::new()),
     }
 }
 
-async fn home(
+async fn locations(
     State(app): State<Arc<App>>,
     Query(query): Query<ViewQuery>,
     headers: HeaderMap,
 ) -> Response {
-    page(&app, query, &headers, String::new()).await
-}
-
-async fn captures(
-    State(app): State<Arc<App>>,
-    Query(query): Query<ViewQuery>,
-    headers: HeaderMap,
-) -> Response {
-    match app.work(|store| store.list_captures()).await {
-        Ok(captures) => html(&CapturesTemplate {
-            captures,
-            playlist_id: query.playlist.unwrap_or(0),
-            status: app.status.lock().map_or_else(
-                |_| "Reader status unavailable".into(),
-                |status| status.clone(),
-            ),
-            polled: true,
-        }),
+    let previous = query.revision.clone();
+    match map_view(&app, query).await {
+        Ok(view) if previous.as_deref() == Some(&view.revision) => {
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(view) => {
+            let mut response = html(&LocationsTemplate { view: &view });
+            if previous.is_none() {
+                let url = format!(
+                    "/?map={}&mode={}&area={}&point={}",
+                    view.map.code, view.mode, view.area, view.selected
+                );
+                if let Ok(value) = url.parse() {
+                    response.headers_mut().insert("hx-replace-url", value);
+                }
+            }
+            response
+        }
         Err(error) => failure(error, &headers),
     }
 }
 
 #[derive(Template)]
 #[template(
-    source = "<div class=\"notice error\" role=\"alert\">{{ message }} <a href=\"/\">Back to player</a></div>",
+    source = "<p data-important role=\"alert\">{{ message }}</p>",
     ext = "html"
 )]
 struct ErrorTemplate<'a> {
@@ -507,110 +706,6 @@ fn failure(error: Box<dyn std::error::Error + Send + Sync>, headers: &HeaderMap)
     response
 }
 
-#[derive(Deserialize)]
-struct Action {
-    kind: String,
-    playlist: Option<i64>,
-    spot: Option<i64>,
-    capture: Option<i64>,
-    map_code: Option<String>,
-    name: Option<String>,
-    description: Option<String>,
-    link: Option<String>,
-}
-
-async fn action(
-    State(app): State<Arc<App>>,
-    headers: HeaderMap,
-    Form(form): Form<Action>,
-) -> Response {
-    let cfg_root = app.installation.cfg.clone();
-    let result = app
-        .work(move |store| {
-            if form.kind == "create" {
-                let map = form.map_code.as_deref().unwrap_or("").trim();
-                let name = form.name.as_deref().unwrap_or("").trim();
-                if map.len() > 64 || name.len() > 120 {
-                    return Err(invalid("Use a shorter map or playlist name").into());
-                }
-                let bytes = random_bytes()?;
-                let suffix: String = bytes[..4].iter().map(|b| format!("{b:02x}")).collect();
-                let playlist = store.create_playlist(map, &format!("{map}_{suffix}"), name)?;
-                store.set_setting("selected_playlist", &playlist.id.to_string())?;
-                return Ok((
-                    playlist.id,
-                    0,
-                    "Playlist created. Sync to CS2 to start capturing.".into(),
-                ));
-            }
-            let id = form.playlist.unwrap_or(0);
-            let playlist = store
-                .list_playlists()?
-                .into_iter()
-                .find(|p| p.id == id)
-                .ok_or_else(|| invalid("Choose a playlist first"))?;
-            let selected = match form.kind.as_str() {
-                "sync" | "select" => form.spot.filter(|id| *id > 0),
-                "accept" => {
-                    let description = form.description.as_deref().unwrap_or("").trim();
-                    let link = form.link.as_deref().filter(|s| !s.trim().is_empty());
-                    if description.len() > 2000 || link.is_some_and(|s| s.len() > 2048) {
-                        return Err(invalid("Use a shorter description or reference link").into());
-                    }
-                    let spot = store.accept_capture(
-                        form.capture.ok_or_else(|| invalid("Choose a capture"))?,
-                        id,
-                        description,
-                        link,
-                    )?;
-                    store.set_setting("selected_spot", &spot.to_string())?;
-                    store.set_setting("selected_playlist", &id.to_string())?;
-                    return Ok((id, spot, "Spot saved. Sync to update CS2.".into()));
-                }
-                "discard" => {
-                    store.discard_capture(
-                        form.capture.ok_or_else(|| invalid("Choose a capture"))?,
-                    )?;
-                    return Ok((id, 0, "Capture discarded.".into()));
-                }
-                _ => return Err(invalid("Unknown action").into()),
-            };
-            let spots = store.load_spots(id)?;
-            let files = cfg::render_player(&playlist, &spots, selected)?;
-            cfg::export(&cfg_root, &files)?;
-            let spot = selected
-                .or_else(|| spots.first().map(|s| s.id))
-                .unwrap_or(0);
-            store.set_setting("selected_playlist", &id.to_string())?;
-            store.set_setting("selected_spot", &spot.to_string())?;
-            Ok((
-                id,
-                spot,
-                "Synced. Press ↑ in CS2 to load the selection.".into(),
-            ))
-        })
-        .await;
-    match result {
-        Ok((playlist, spot, message)) => {
-            if !headers.contains_key("hx-request") {
-                return Redirect::to(&format!("/?playlist={playlist}&spot={spot}")).into_response();
-            }
-            page(
-                &app,
-                ViewQuery {
-                    playlist: Some(playlist),
-                    spot: Some(spot),
-                    ..Default::default()
-                },
-                &headers,
-                message,
-            )
-            .await
-        }
-        Err(error) => failure(error, &headers),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +717,8 @@ mod tests {
             failures: 0,
             blocked_until: None,
             sessions: VecDeque::new(),
+            #[cfg(feature = "dev")]
+            preview_session: None,
         };
         let now = Instant::now();
         for _ in 0..5 {

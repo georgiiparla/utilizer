@@ -110,6 +110,200 @@ pub fn render_player(
     Ok(files)
 }
 
+/// One compiled cfg.cfg; numbered shortcuts are CS2 aliases only.
+/// Slot numbers follow the current map's ordered list, rather than database IDs.
+pub fn render_map_player(
+    map: &str,
+    spots: &[crate::storage::MapSpot],
+    selected: Option<i64>,
+) -> Result<Vec<CfgFile>> {
+    let map = crate::maps::find(map).ok_or_else(|| invalid("Unsupported map"))?;
+    let mut previous = 0;
+    let mut ids = std::collections::HashSet::new();
+    for spot in spots {
+        if spot.map_code != map.code
+            || spot.ordinal <= previous
+            || spot.id <= 0
+            || !ids.insert(spot.id)
+        {
+            return Err(invalid(
+                "Spots must belong to this map and have unique IDs and increasing order",
+            )
+            .into());
+        }
+        crate::storage::validate_spot(&spot.description, spot.link.as_deref(), spot.position)?;
+        previous = spot.ordinal;
+    }
+    let chosen = match selected {
+        Some(id) => spots
+            .iter()
+            .position(|spot| spot.id == id)
+            .ok_or_else(|| invalid("Spot does not belong to this map"))?,
+        None => 0,
+    };
+    let mut content = format!(
+        "{GENERATED_HEADER}\nsv_cheats 1\necholn \"{PLAYLIST_MARKER} {}\"\nalias ut_save \"sv_cheats 1;say_team Utilizer capture;echoln {CAPTURE_MARKER};getpos\"\n",
+        map.code
+    );
+    for (index, spot) in spots.iter().enumerate() {
+        let slot = index + 1;
+        let yaw = spot.position.angles[1];
+        content.push_str(&format!("alias ut_d_{slot} \"setang 89 {yaw} 0\"\n"));
+        // Text is inside an alias's quoted command string. It must not be able
+        // to end that string, introduce another command, or escape its delimiter.
+        let name: String = spot
+            .description
+            .chars()
+            .map(|c| {
+                if matches!(c, ';' | '\"' | '\\') {
+                    '\''
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let commands = format!(
+            "sv_cheats 1;{};{};say_team [{slot}/{}] {name}",
+            slot_bindings(index, spots.len(), ";"),
+            spot.position.command(),
+            spots.len()
+        );
+        if commands.len() > 1023 {
+            return Err(invalid(format!("Spot {slot} is too long for a console alias")).into());
+        }
+        content.push_str(&format!("alias ut_{slot} \"{commands}\"\n"));
+    }
+    if spots.is_empty() {
+        for name in ["ut_next", "ut_prev", "ut_current", "ut_down"] {
+            content.push_str(&format!("alias {name} \"\"\n"));
+        }
+    } else {
+        content.push_str(&slot_bindings(chosen, spots.len(), "\n"));
+        content.push('\n');
+    }
+    content.push_str("bind RIGHTARROW ut_next\nbind LEFTARROW ut_prev\nbind UPARROW ut_current\nbind DOWNARROW ut_down\nbind F6 ut_save\n");
+    Ok(vec![CfgFile {
+        filename: "cfg.cfg".into(),
+        content,
+    }])
+}
+
+fn slot_bindings(index: usize, count: usize, separator: &str) -> String {
+    let slot = index + 1;
+    let next = (index + 1) % count + 1;
+    let previous = (index + count - 1) % count + 1;
+    [
+        format!("alias ut_next ut_{next}"),
+        format!("alias ut_prev ut_{previous}"),
+        format!("alias ut_current ut_{slot}"),
+        format!("alias ut_down ut_d_{slot}"),
+    ]
+    .join(separator)
+}
+
+/// Explicit Sync publishes one cfg.cfg and removes recognized owned earlier
+/// output. Unrelated files and reparse points are never removed.
+pub fn export_map_player(
+    root: &Path,
+    map: &str,
+    spots: &[crate::storage::MapSpot],
+    selected: Option<i64>,
+) -> Result<Vec<PathBuf>> {
+    let root = root.canonicalize()?;
+    if !root.is_dir() {
+        return Err(invalid("CS2 cfg root is not a directory").into());
+    }
+    let mut files = render_map_player(map, spots, selected)?;
+    let mut stale = std::collections::BTreeSet::new();
+    for filename in ["cfg.cfg", "ut.cfg"] {
+        if let Some(old) = owned_text(&root.join(filename))? {
+            stale.extend(
+                old.lines()
+                    .filter_map(|line| {
+                        line.strip_prefix("alias ")?
+                            .split_whitespace()
+                            .next()
+                            .and_then(shortcut_index)
+                    })
+                    .filter(|slot| *slot > spots.len()),
+            );
+        }
+    }
+    let resets: String = stale
+        .into_iter()
+        .map(|slot| format!("alias ut_{slot} \"\"\n"))
+        .collect();
+    files[0]
+        .content
+        .insert_str(GENERATED_HEADER.len() + 1, &resets);
+    let paths = write_files(&root, &files)?;
+    for entry in fs::read_dir(&root)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let stale =
+            name == "ut.cfg" || name.strip_suffix(".cfg").and_then(shortcut_index).is_some();
+        if stale && owned_text(&path)?.is_some() {
+            fs::remove_file(path)?;
+        }
+    }
+    clean_previous_player(&root.join(OUTPUT_DIRECTORY))?;
+    Ok(paths)
+}
+
+fn shortcut_index(name: &str) -> Option<usize> {
+    let digits = name.strip_prefix("ut_")?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok().filter(|slot| *slot > 0)
+}
+
+fn owned_text(path: &Path) -> Result<Option<String>> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if !meta.is_file() || is_link(&meta) {
+        return Ok(None);
+    }
+    let bytes = fs::read(path)?;
+    if bytes.split(|b| *b == b'\n').next() != Some(GENERATED_HEADER.as_bytes()) {
+        return Ok(None);
+    }
+    Ok(Some(String::from_utf8(bytes)?))
+}
+
+fn clean_previous_player(directory: &Path) -> Result<()> {
+    let meta = match fs::symlink_metadata(directory) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !meta.is_dir() || is_link(&meta) {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let base = name.strip_suffix(".cfg").unwrap_or("");
+        let numbered = ["spot_", "playlist_"].iter().any(|prefix| {
+            base.strip_prefix(prefix)
+                .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+        });
+        let recognized = matches!(base, "start" | "current" | "ut_save")
+            || numbered
+            || base
+                .strip_prefix("map_")
+                .and_then(crate::maps::find)
+                .is_some();
+        if recognized && owned_text(&path)?.is_some() {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
 /// The caller explicitly supplies a validated CS2 cfg root. No startup writes.
 pub fn export(cfg_root: &Path, files: &[CfgFile]) -> Result<Vec<PathBuf>> {
     let cfg_root = cfg_root.canonicalize()?;
@@ -126,6 +320,10 @@ pub fn export(cfg_root: &Path, files: &[CfgFile]) -> Result<Vec<PathBuf>> {
     if !meta.is_dir() || is_link(&meta) {
         return Err(invalid("Export directory must be a real directory, not a link").into());
     }
+    write_files(&output, files)
+}
+
+fn write_files(output: &Path, files: &[CfgFile]) -> Result<Vec<PathBuf>> {
     // Preflight all targets before changing any files.
     let mut paths = Vec::new();
     for file in files {
@@ -161,7 +359,7 @@ pub fn export(cfg_root: &Path, files: &[CfgFile]) -> Result<Vec<PathBuf>> {
     for (file, target) in files.iter().zip(&paths) {
         // Unique, exclusively created staging files avoid stale-name conflicts
         // after a crash. Drop cleans up unsuccessful writes automatically.
-        let mut staging = tempfile::NamedTempFile::new_in(&output)?;
+        let mut staging = tempfile::NamedTempFile::new_in(output)?;
         staging.write_all(file.content.as_bytes())?;
         staging.as_file().sync_all()?;
         staging.persist(target).map_err(|error| error.error)?;

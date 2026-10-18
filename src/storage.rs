@@ -31,6 +31,27 @@ pub struct Spot {
     pub position: Position,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapSpot {
+    pub id: i64,
+    pub map_code: String,
+    pub ordinal: i64,
+    pub description: String,
+    pub link: Option<String>,
+    pub position: Position,
+}
+
+fn map_spot(row: &Row<'_>) -> rusqlite::Result<MapSpot> {
+    Ok(MapSpot {
+        id: row.get(0)?,
+        map_code: row.get(1)?,
+        ordinal: row.get(2)?,
+        description: row.get(3)?,
+        link: row.get(4)?,
+        position: position(row, 5)?,
+    })
+}
+
 pub struct Store {
     connection: Connection,
 }
@@ -54,7 +75,7 @@ impl Store {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let version: u32 = transaction.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         match version {
-            0 => transaction.execute_batch(include_str!("../migrations/001_initial.sql"))?,
+            0 => transaction.execute_batch(include_str!("schema.sql"))?,
             1 => {}
             _ => {
                 return Err(invalid(format!(
@@ -82,7 +103,8 @@ impl Store {
     }
 
     pub fn create_playlist(&self, map_code: &str, slug: &str, name: &str) -> Result<Playlist> {
-        if !valid_slug(map_code) || !valid_slug(slug) || name.trim().is_empty() {
+        validate_name(name, 80)?;
+        if !valid_slug(map_code) || !valid_slug(slug) {
             return Err(
                 invalid("Playlist needs a valid map, unique slug, and nonempty name").into(),
             );
@@ -132,13 +154,24 @@ impl Store {
 
     /// Commit a reader batch together so a retry cannot hide or duplicate an
     /// earlier successful insert when a later capture fails.
-    pub(crate) fn record_captures(&self, captures: &[Capture]) -> Result<Vec<i64>> {
+    pub(crate) fn record_captures(
+        &self,
+        captures: &[Capture],
+        maps: &[Option<String>],
+    ) -> Result<Vec<i64>> {
         // The connection stays private to Store; nested transactions are checked
         // by SQLite, allowing the existing synchronous &self recording API.
         let transaction = self.connection.unchecked_transaction()?;
         let ids = captures
             .iter()
-            .map(|capture| self.record_capture(capture))
+            .enumerate()
+            .map(|(index, capture)| {
+                let id = self.record_capture(capture)?;
+                if let Some(map) = maps.get(index).and_then(Option::as_deref) {
+                    self.set_setting(&format!("capture_map_{id}"), map)?;
+                }
+                Ok(id)
+            })
             .collect::<Result<Vec<_>>>()?;
         transaction.commit()?;
         Ok(ids)
@@ -229,4 +262,166 @@ impl Store {
             })?
             .collect::<rusqlite::Result<_>>()?)
     }
+
+    pub fn map_spots(&self, map: &str) -> Result<Vec<MapSpot>> {
+        let mut statement = self.connection.prepare("SELECT id,map_code,ordinal,description,link,x,y,z,pitch,yaw,roll FROM map_spots WHERE map_code=?1 ORDER BY ordinal")?;
+        Ok(statement
+            .query_map([map], map_spot)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn map_spot(&self, id: i64) -> Result<MapSpot> {
+        self.connection.query_row("SELECT id,map_code,ordinal,description,link,x,y,z,pitch,yaw,roll FROM map_spots WHERE id=?1", [id], map_spot)
+            .optional()?.ok_or_else(|| invalid("Spot no longer exists").into())
+    }
+
+    pub fn save_map_spot(
+        &self,
+        id: Option<i64>,
+        map: &str,
+        name: &str,
+        link: Option<&str>,
+        position: Position,
+    ) -> Result<i64> {
+        validate_map_spot(map, name, link, position)?;
+        let [x, y, z] = position.origin;
+        let [pitch, yaw, roll] = position.angles;
+        if let Some(id) = id {
+            if self.connection.execute("UPDATE map_spots SET description=?3,link=?4,x=?5,y=?6,z=?7,pitch=?8,yaw=?9,roll=?10 WHERE id=?1 AND map_code=?2", params![id,map,name.trim(),link,x,y,z,pitch,yaw,roll])? != 1 {
+                return Err(invalid("Spot no longer exists on this map").into());
+            }
+            return Ok(id);
+        }
+        self.connection.execute("INSERT INTO map_spots(map_code,ordinal,description,link,x,y,z,pitch,yaw,roll) VALUES (?1,(SELECT COALESCE(MAX(ordinal),0)+1 FROM map_spots WHERE map_code=?1),?2,?3,?4,?5,?6,?7,?8,?9)", params![map,name.trim(),link,x,y,z,pitch,yaw,roll])?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    pub fn delete_map_spot(&self, id: i64, map: &str) -> Result<()> {
+        if self.connection.execute(
+            "DELETE FROM map_spots WHERE id=?1 AND map_code=?2",
+            params![id, map],
+        )? != 1
+        {
+            return Err(invalid("Spot no longer exists on this map").into());
+        }
+        Ok(())
+    }
+
+    pub fn move_map_spot(&mut self, id: i64, map: &str, earlier: bool) -> Result<()> {
+        let spot = self.map_spot(id)?;
+        if spot.map_code != map {
+            return Err(invalid("Spot belongs to another map").into());
+        }
+        let spots = self.map_spots(map)?;
+        let neighbor = if earlier {
+            spots.iter().rev().find(|s| s.ordinal < spot.ordinal)
+        } else {
+            spots.iter().find(|s| s.ordinal > spot.ordinal)
+        };
+        let Some(neighbor) = neighbor else {
+            return Ok(());
+        };
+        let spare = spots
+            .last()
+            .and_then(|s| s.ordinal.checked_add(1))
+            .ok_or_else(|| invalid("Spot order out of range"))?;
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE map_spots SET ordinal=?2 WHERE id=?1",
+            params![id, spare],
+        )?;
+        transaction.execute(
+            "UPDATE map_spots SET ordinal=?2 WHERE id=?1",
+            params![neighbor.id, spot.ordinal],
+        )?;
+        transaction.execute(
+            "UPDATE map_spots SET ordinal=?2 WHERE id=?1",
+            params![id, neighbor.ordinal],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn capture_map(&self, id: i64) -> Result<Option<String>> {
+        if let Some(map) = self.setting(&format!("capture_map_{id}"))? {
+            return Ok(Some(map));
+        }
+        let capture = self
+            .list_captures()?
+            .into_iter()
+            .find(|c| c.id == id)
+            .ok_or_else(|| invalid("Capture no longer pending"))?;
+        Ok(capture
+            .capture
+            .playlist_slug
+            .as_deref()
+            .and_then(crate::maps::find)
+            .map(|m| m.code.to_owned()))
+    }
+
+    pub fn accept_map_capture(
+        &mut self,
+        id: i64,
+        map: &str,
+        name: &str,
+        link: Option<&str>,
+        position: Position,
+    ) -> Result<i64> {
+        validate_map_spot(map, name, link, position)?;
+        if self.capture_map(id)?.as_deref().is_some_and(|m| m != map) {
+            return Err(invalid("Capture belongs to another map").into());
+        }
+        let transaction = self.connection.transaction()?;
+        let [x, y, z] = position.origin;
+        let [pitch, yaw, roll] = position.angles;
+        if transaction.execute("INSERT INTO map_spots(map_code,ordinal,description,link,x,y,z,pitch,yaw,roll,capture_id) SELECT ?2,(SELECT COALESCE(MAX(ordinal),0)+1 FROM map_spots WHERE map_code=?2),?3,?4,?5,?6,?7,?8,?9,?10,id FROM captures WHERE id=?1 AND accepted=0",params![id,map,name.trim(),link,x,y,z,pitch,yaw,roll])? != 1 {
+            return Err(invalid("Capture no longer pending").into());
+        }
+        let spot = transaction.last_insert_rowid();
+        transaction.execute("UPDATE captures SET accepted=1 WHERE id=?1", [id])?;
+        transaction.commit()?;
+        Ok(spot)
+    }
+}
+
+fn validate_map_spot(map: &str, name: &str, link: Option<&str>, position: Position) -> Result<()> {
+    validate_spot(name, link, position)?;
+    if crate::maps::find(map).is_none_or(|m| m.calibration.project(position.origin).is_none()) {
+        return Err(invalid("Position is outside this supported map").into());
+    }
+    Ok(())
+}
+
+pub fn validate_name(name: &str, limit: usize) -> Result<()> {
+    if name.trim().is_empty() || name.chars().count() > limit || name.chars().any(char::is_control)
+    {
+        return Err(invalid(format!(
+            "Use a name of 1–{limit} characters without control characters"
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+pub fn validate_spot(name: &str, link: Option<&str>, position: Position) -> Result<()> {
+    validate_name(name, 160)?;
+    if !position.is_valid()
+        || position.origin.iter().any(|n| n.abs() > 1_000_000.0)
+        || position.angles.iter().any(|n| n.abs() > 3600.0)
+    {
+        return Err(invalid("Position or angles are outside the supported range").into());
+    }
+    if let Some(link) = link {
+        let authority = link
+            .strip_prefix("https://")
+            .or_else(|| link.strip_prefix("http://"))
+            .and_then(|s| s.split(['/', '?', '#']).next());
+        if link.len() > 2048
+            || link.chars().any(|c| c.is_whitespace() || c.is_control())
+            || authority.is_none_or(|s| s.is_empty() || s.contains(['\\', '@']))
+        {
+            return Err(invalid("Use an http/https reference URL of at most 2048 bytes").into());
+        }
+    }
+    Ok(())
 }

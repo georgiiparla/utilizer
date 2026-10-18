@@ -26,4 +26,15 @@ CREATE TABLE spots (
     pitch REAL NOT NULL, yaw REAL NOT NULL, roll REAL NOT NULL,
     UNIQUE (playlist_id, ordinal)
 );
+CREATE TABLE map_spots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    map_code TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    description TEXT NOT NULL,
+    link TEXT,
+    x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
+    pitch REAL NOT NULL, yaw REAL NOT NULL, roll REAL NOT NULL,
+    capture_id INTEGER UNIQUE REFERENCES captures(id),
+    UNIQUE(map_code, ordinal)
+);
 PRAGMA user_version = 1;

@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 {% block body %}
-<main class="login">
-  <h1 class="brand">{% include "brand.html" %}</h1>
+<main class="login-screen">
+  <header class="login-brand"><img src="/assets/logo.ico" width="32" height="32" alt=""><h1>Utilizer</h1></header>
   <form method="post" action="/login">
-    <label for="code">Code from the terminal</label>
-    <input id="code" name="code" class="code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" autofocus required>
-    {% if !error.is_empty() %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
-    <button class="primary wide" type="submit">Unlock</button>
+    <input id="code" name="code" aria-label="Code" placeholder="Code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" autofocus required>
   </form>
 </main>
 {% endblock %}
+
+{% block notification %}{% if !error.is_empty() %}<p data-important>{{ error }}</p>{% endif %}{% endblock %}

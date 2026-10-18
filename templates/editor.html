@@ -1,0 +1,50 @@
+<dialog id="editor" aria-label="{{ mode }}">
+{% if mode == "help" %}
+<pre class="help-guide">Setup
+Keep Utilizer running.
+Enable CS2 console: Settings > Game > Developer Console.
+Open the console (~):
+  con_logfile console.log
+Then join a local practice map.
+In Utilizer: Ctrl+S. Back in CS2:
+  exec cfg
+
+Capture
+Stand and aim, then F6 records the position.
+Mode: Captures > zone > double-click > name > Save.
+Delete discards a capture.
+
+Add manually
+Add spot > name + position > Save.
+  setpos X Y Z;setang P Y R
+
+Practice
+Mode: Saved > zone > select a spot > Ctrl+S.
+In CS2: exec cfg (repeat after every sync).
+  ← / →   Previous / next (wraps)
+  ↑       Repeat current spot
+  ↓       Look down, keep the spot's yaw
+  ut_7    Jump to slot 7, without exec
+Chat: [number/total] name.
+Slots follow the whole saved map list.
+
+Edit
+Double-click or Enter opens details.
+Click outside or Escape closes.
+Save/Delete are local; Ctrl+S writes cfg.cfg.
+Saved and Captures show separate sets.</pre>
+{% else %}
+<form method="post" action="/manage" hx-post="/manage" hx-target="#feedback" hx-swap="innerHTML" class="editor-form">
+<input type="hidden" name="kind" value="{{ mode }}"><input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="point" value="{{ point }}">
+<input type="hidden" name="stamp" value="{{ stamp }}">
+<input name="name" aria-label="Spot name" placeholder="Name" value="{{ name }}" maxlength="160" autocomplete="off" required autofocus>
+<textarea name="position" aria-label="Position" placeholder="setpos X Y Z;setang P Y R" maxlength="256" rows="3" spellcheck="false" required>{{ position }}</textarea>
+<input type="url" name="link" aria-label="Reference URL" placeholder="Reference URL" value="{{ link }}" maxlength="2048">
+{% if !link.is_empty() %}<a class="reference" href="{{ link }}" target="_blank" rel="noopener noreferrer">Reference</a>{% endif %}
+<div class="editor-actions">
+<button name="action" value="save">Save</button>
+{% if !point.is_empty() %}<button name="action" value="delete" formnovalidate>Delete</button>{% endif %}
+</div>
+</form>
+{% endif %}
+</dialog>

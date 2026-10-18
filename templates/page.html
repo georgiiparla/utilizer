@@ -1,2 +1,7 @@
 {% extends "base.html" %}
-{% block body %}{% include "workspace.html" %}{% endblock %}
+{% block body %}
+<main data-map="{{ view.map.code }}">
+{% include "locations.html" %}
+</main>
+<div id="editor-host"></div>
+{% endblock %}

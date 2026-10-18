@@ -1,0 +1,41 @@
+<section id="locations" data-map="{{ view.map.code }}" data-mode="{{ view.mode }}" data-point="{{ view.selected }}" hx-get="/locations" data-state='{"map":"{{ view.map.code }}","mode":"{{ view.mode }}","area":"{{ view.area }}","point":"{{ view.selected }}","revision":"{{ view.revision }}"}' hx-trigger="every 1s, locationsChanged from:body" hx-swap="outerHTML">
+<header class="toolbar">
+<form method="get" action="/" hx-get="/locations" hx-target="#locations" hx-swap="outerHTML">
+<input type="hidden" name="mode" value="{{ view.mode }}">
+<select name="map" aria-label="Map" data-map-select {% if !view.detected.is_empty() %}disabled{% endif %}>
+{% for map in view.maps %}<option value="{{ map.code }}" {% if map.code == view.map.code %}selected{% endif %}>{{ map.name }}</option>{% endfor %}
+</select>
+<noscript><button>Open</button></noscript>
+</form>
+<div class="toolbar-actions"><button type="button" data-editor="spot">Add spot</button><button type="button" data-editor="help">Help</button></div>
+<select aria-label="Theme" data-theme-select><option value="light">Light</option><option value="dark">Dark</option></select>
+</header>
+<div class="workspace">
+<nav aria-label="Spots">
+{% for point in view.points %}
+<button type="button" id="point-{{ point.key }}" data-point="{{ point.key }}" class="spot{% if point.selected %} selected{% endif %}"><span hx-disable>{{ point.name }}</span></button>
+{% endfor %}
+</nav>
+<div class="map">
+{% if view.map.artwork.is_some() %}
+<svg viewBox="{{ view.map.viewport }}" aria-label="{{ view.map.name }} starting positions" role="group">
+{% if let Some(outline) = view.map.outline.as_ref() %}<defs><clipPath id="zone-map-outline" clipPathUnits="userSpaceOnUse"><path d="{{ outline.path }}" transform="{{ outline.transform }}" clip-rule="evenodd" /></clipPath></defs>{% endif %}
+<image class="map-light" href="/assets/maps/{{ view.map.code.trim_start_matches("de_") }}.svg" width="1024" height="1024" />
+<image class="map-dark" href="/assets/maps/{{ view.map.code.trim_start_matches("de_") }}-dark.svg" width="1024" height="1024" />
+<g clip-path="url(#zone-map-outline)">
+{% for area in view.areas %}<g role="button" tabindex="0" hx-get="/locations?map={{ view.map.code }}&amp;mode={{ view.mode }}&amp;area={{ area.key }}" hx-target="#locations" hx-swap="outerHTML" aria-label="Area with {{ area.count }} spots" class="area{% if area.selected %} selected{% endif %}"><path d="{{ area.path }}" /></g>{% endfor %}
+</g>
+{% for point in view.points %}{% if point.placed %}<g role="button" tabindex="0" data-point="{{ point.key }}" aria-label="Select {{ point.name }}" class="dot{% if point.selected %} selected{% endif %}"><circle cx="{{ point.x }}" cy="{{ point.y }}" r="5"/></g>{% endif %}{% endfor %}
+</svg>
+{% endif %}
+</div>
+</div>
+<footer>
+<form method="get" action="/" hx-get="/locations" hx-target="#locations" hx-swap="outerHTML">
+<input type="hidden" name="map" value="{{ view.map.code }}">
+<select name="mode" aria-label="Mode" data-mode-select><option value="spots" {% if view.mode == "spots" %}selected{% endif %}>Mode: Saved</option><option value="captures" {% if view.mode == "captures" %}selected{% endif %}>Mode: Captures</option></select>
+<noscript><button>Open</button></noscript>
+</form>
+<a href="https://setpos.gg" target="_blank" rel="noreferrer">Maps: setpos.gg</a>
+</footer>
+</section>

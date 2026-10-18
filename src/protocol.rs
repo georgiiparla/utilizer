@@ -62,11 +62,21 @@ pub struct Parser {
     discarding: bool,
     selected_playlist: Option<String>,
     pending: Option<(Instant, Option<String>)>,
+    active_map: Option<String>,
+    capture_maps: Vec<Option<String>>,
 }
 
 impl Parser {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn active_map(&self) -> Option<&str> {
+        self.active_map.as_deref()
+    }
+
+    pub(crate) fn take_capture_maps(&mut self) -> Vec<Option<String>> {
+        std::mem::take(&mut self.capture_maps)
     }
 
     pub fn reset(&mut self) {
@@ -86,6 +96,7 @@ impl Parser {
     /// `now` is injected so timeout tests never have to sleep.
     pub fn feed(&mut self, bytes: &[u8], now: Instant) -> Vec<Capture> {
         self.expire(now);
+        self.capture_maps.clear();
         let mut captures = Vec::new();
         for &byte in bytes {
             if byte == b'\n' {
@@ -95,6 +106,7 @@ impl Parser {
                     if let Ok(text) = std::str::from_utf8(&line)
                         && let Some(capture) = self.process_line(text.trim_end_matches('\r'), now)
                     {
+                        self.capture_maps.push(self.active_map.clone());
                         captures.push(capture);
                     }
                 }
@@ -115,6 +127,23 @@ impl Parser {
 
     fn process_line(&mut self, line: &str, now: Instant) -> Option<Capture> {
         let text = payload(line);
+        if let Some(map) = text
+            .strip_prefix("[Client] Map: \"")
+            .and_then(|s| s.strip_suffix('"'))
+        {
+            self.active_map = crate::maps::find(map).map(|m| m.code.to_owned());
+            self.selected_playlist = None;
+            self.pending = None;
+            return None;
+        }
+        if text.starts_with("Loading map \"")
+            || text.starts_with("[Client] Disconnecting from server:")
+        {
+            self.active_map = None;
+            self.selected_playlist = None;
+            self.pending = None;
+            return None;
+        }
         if let Some(slug) = text.strip_prefix(PLAYLIST_MARKER)
             && let Some(slug) = slug.strip_prefix(' ')
         {
