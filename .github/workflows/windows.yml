@@ -62,7 +62,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Executable could not start' }
           $tokens = $null
           $parseErrors = $null
-          foreach ($script in @('install.ps1', 'uninstall.ps1')) {
+          foreach ($script in @('install.ps1')) {
             [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $script), [ref]$tokens, [ref]$parseErrors) | Out-Null
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
@@ -77,7 +77,6 @@ jobs:
           $hash = (Get-FileHash -LiteralPath dist/utilizer-windows-x86_64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  utilizer-windows-x86_64.exe`n" | Set-Content -LiteralPath dist/SHA256SUMS -Encoding ascii -NoNewline
           Copy-Item -LiteralPath install.ps1 -Destination dist/install.ps1
-          Copy-Item -LiteralPath uninstall.ps1 -Destination dist/uninstall.ps1
 
       - name: Upload Windows build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -111,5 +110,5 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: >-
           gh release create "$RELEASE_TAG"
-          dist/utilizer-windows-x86_64.exe dist/SHA256SUMS dist/install.ps1 dist/uninstall.ps1
+          dist/utilizer-windows-x86_64.exe dist/SHA256SUMS dist/install.ps1
           --verify-tag --draft --title "Utilizer $RELEASE_TAG" --generate-notes

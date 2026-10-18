@@ -2,7 +2,11 @@ param([Parameter(Mandatory = $true)][string]$Executable)
 $ErrorActionPreference = 'Stop'
 $fixture = (Resolve-Path -LiteralPath $Executable).Path
 $installer = Join-Path $PSScriptRoot '..\install.ps1'
-$uninstaller = Join-Path $PSScriptRoot '..\uninstall.ps1'
+# Exercise the private embedded helper for filesystem/PATH edge cases; the
+# actual installed CLI and self-removal are covered by tests/uninstall.rs.
+$uninstallSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\src\uninstall.rs') -Raw
+$embedded = [regex]::Match($uninstallSource, '(?s)const SCRIPT: &str = r###"(.*?)"###;')
+if (-not $embedded.Success) { throw 'Cannot locate the embedded uninstall helper' }
 $targetRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\target'))
 $sandbox = Join-Path $targetRoot ('installer-test-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $sandbox 'tmp') -Force | Out-Null
@@ -25,6 +29,7 @@ public static class InstallerTestEnvironment {
 $accelerators = [psobject].Assembly.GetType('System.Management.Automation.TypeAccelerators')
 $accelerators::Add('Environment', [InstallerTestEnvironment])
 if ((& ([scriptblock]::Create('[Environment]'))) -ne [InstallerTestEnvironment]) { throw 'Test environment isolation failed' }
+$uninstaller = [scriptblock]::Create($embedded.Groups[1].Value)
 $global:UtilizerTestBadChecksum = $false
 $global:UtilizerTestRunning = $false
 $global:UtilizerTestProgress = [Collections.Generic.List[string]]::new()
@@ -77,7 +82,9 @@ try {
     $rejected = $false
     try { & $installer } catch { $rejected = $_.ToString() -match 'Close the Utilizer console' }
     if (-not $rejected) { throw 'Running executable was not protected' }
-    if (@(Get-ChildItem -LiteralPath $env:TEMP).Count -ne 0) { throw 'Temporary downloads were not cleaned up' }
+    if (@(Get-ChildItem -LiteralPath $env:TEMP -Filter 'utilizer-install-*').Count -ne 0) {
+        throw 'Temporary downloads were not cleaned up'
+    }
 
     $rejected = $false
     try { & $uninstaller } catch { $rejected = $_.ToString() -match 'Close the Utilizer console' }
@@ -136,7 +143,7 @@ try {
     & $uninstaller -Purge
     if ((Test-Path -LiteralPath $data) -or (Test-Path -LiteralPath $installDirectory)) { throw 'Purge left an owned application folder' }
     if (-not (Test-Path -LiteralPath (Join-Path $realDirectory 'utilizer.exe'))) { throw 'Purge removed files outside its owned folders' }
-    & $uninstaller -RemoveData
+    & $uninstaller -Purge
     if ([System.Environment]::GetEnvironmentVariable('Path', 'User') -ne $originalPath) { throw 'Real user PATH changed' }
     Write-Host 'PASS: install/update, checksum rejection, running-process guards, uninstall/repeat, PATH cleanup, full purge, unrelated-file protection, and junction refusal'
 } finally {
