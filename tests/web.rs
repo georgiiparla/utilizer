@@ -68,12 +68,36 @@ async fn local_player_login_capture_sync_errors_and_logout() {
     let router = web::router(app.clone());
     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
+    let reply = request(address, "GET", "/login", "", "").await;
+    assert_eq!(reply.status, 200);
+    // Native form POSTs use this policy when generating Origin. no-referrer
+    // makes that Origin null, so testing only a hand-written POST misses login.
+    assert!(reply.headers.contains("referrer-policy: same-origin"));
+    assert!(reply.body.contains("method=\"post\" action=\"/login\""));
+
     let reply = request(address, "GET", "/", "HX-Request: true\r\n", "").await;
     assert_eq!(reply.status, 401);
     assert!(reply.headers.contains("hx-redirect: /login"));
     let reply = request(address, "POST", "/login", "", &format!("code={code}")).await;
     assert_eq!(reply.status, 403, "A mutation without Origin must fail");
+    for rejected in ["null", "https://example.com"] {
+        let reply = request(
+            address,
+            "POST",
+            "/login",
+            &format!("Origin: {rejected}\r\n"),
+            &format!("code={code}"),
+        )
+        .await;
+        assert_eq!(reply.status, 403);
+        assert!(reply.body.contains("Reload the login page"));
+        assert!(!reply.headers.contains("set-cookie:"));
+    }
     let origin = format!("Origin: {}\r\n", web::URL);
+    let reply = request(address, "POST", "/login", &origin, "code=invalid").await;
+    assert_eq!(reply.status, 401);
+    assert!(reply.body.contains("That code does not match"));
+    assert!(reply.headers.contains("referrer-policy: same-origin"));
     let reply = request(address, "POST", "/login", &origin, &format!("code={code}")).await;
     assert_eq!(reply.status, 303);
     let cookie = reply
@@ -85,6 +109,10 @@ async fn local_player_login_capture_sync_errors_and_logout() {
         .next()
         .unwrap();
     assert!(reply.headers.contains("httponly; samesite=strict"));
+    let player = request(address, "GET", "/", &format!("Cookie: {cookie}\r\n"), "").await;
+    assert_eq!(player.status, 200);
+    assert!(player.body.contains("<html"));
+    assert!(player.headers.contains("referrer-policy: same-origin"));
     let authenticated = format!("{origin}Cookie: {cookie}\r\nHX-Request: true\r\n");
 
     let reply = request(

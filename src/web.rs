@@ -174,16 +174,30 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
             .and_then(|s| s.to_str().ok()),
         Some("127.0.0.1:47825" | "localhost:47825")
     ) {
-        return StatusCode::FORBIDDEN.into_response();
+        return security_headers(
+            (
+                StatusCode::FORBIDDEN,
+                "Open Utilizer at http://127.0.0.1:47825/login.",
+            )
+                .into_response(),
+        );
     }
     if request.method() != axum::http::Method::GET && !valid_origin(request.headers()) {
-        return StatusCode::FORBIDDEN.into_response();
+        let mut response = if request.uri().path() == "/login" {
+            html(&LoginTemplate {
+                error: "The browser could not verify this local request. Reload the login page and enter the console code again.",
+            })
+        } else {
+            failure(invalid("The browser could not verify this local request. Reload the player and try again.").into(), request.headers())
+        };
+        *response.status_mut() = StatusCode::FORBIDDEN;
+        return security_headers(response);
     }
     let public = request.uri().path() == "/login" || request.uri().path().starts_with("/assets/");
     let authenticated = app.auth.lock().ok().is_some_and(|auth| {
         session(request.headers()).is_some_and(|s| auth.sessions.iter().any(|known| known == s))
     });
-    let mut response = if !public && !authenticated {
+    let response = if !public && !authenticated {
         if request.headers().contains_key("hx-request") {
             (StatusCode::UNAUTHORIZED, [("hx-redirect", "/login")]).into_response()
         } else {
@@ -192,6 +206,10 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     } else {
         next.run(request).await
     };
+    security_headers(response)
+}
+
+fn security_headers(mut response: Response) -> Response {
     let headers = response.headers_mut();
     headers.insert(
         header::CACHE_CONTROL,
@@ -204,7 +222,9 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     );
     headers.insert(
         "referrer-policy",
-        "no-referrer".parse().expect("static header"),
+        // Native POST forms need their local Origin for the request guard.
+        // no-referrer makes browsers send Origin: null for these submissions.
+        "same-origin".parse().expect("static header"),
     );
     headers.insert("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'".parse().expect("static header"));
     response
