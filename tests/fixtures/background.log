@@ -1,0 +1,15 @@
+10/17 22:10:55 [Filesystem] GAME "C:\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\"
+10/17 22:10:55 [CommandLine] -steam -condebug -conclearlog
+10/17 22:11:04 [RenderPipelineCsgo]
+Scratch RT Allocations:
+10/17 22:11:04 [RenderPipelineCsgo] RT 1280x960 RGBA8888 4xMSAA : 19660800 Bytes
+10/17 22:11:15 [Client] Map: "<empty>"
+10/17 22:11:30 [Client] Map: "de_nuke"
+10/17 22:18:18  [T] ExamplePlayer [DEAD]: PURPLE
+10/17 22:45:00 ClientPutInServer create new player controller [Practice
+ Bot]
+10/17 22:44:58 CNavGenParams - Nav mesh requests project default generation parameters but actual parameters
+  used during construction differ from defaults. Please re-export the map.
+10/17 22:47:38 [Client] Map: "de_mirage"
+10/18 00:00:06 [Client] 2.7% user commands missed due to network (0 dropped, 7 late)
+10/18 01:08:51 ShutdownSource2Logging

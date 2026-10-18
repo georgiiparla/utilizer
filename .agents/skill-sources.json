@@ -1,0 +1,52 @@
+{
+  "installer": "Codex skill-installer helper (project-local copies)",
+  "skills": [
+    {
+      "name": "rust-best-practices",
+      "repository": "https://github.com/pedronauck/skills",
+      "revision": "0422940cea5d9960b3697016d1cb28c8ed02b030",
+      "path": "skills/mine/rust-best-practices",
+      "sha256": {
+        "references/async-and-concurrency.md": "0e01aa9bcdef79927b6976f0e901fa59b2bc16ad2b62ef8a5b721e0bcaad8215",
+        "references/clippy-and-linting.md": "0e3789150ac1185d29ad39351e2a02d4328dd4577413a094b31b49db219a285c",
+        "references/coding-style.md": "6f10f0c055b4fb8241012de27d053946ebd4a5d6739695cbbb352807bee07ae4",
+        "references/concurrency-sync.md": "b9dd1c193ff8f531c76a44507757986b739663f39b3b6fcba04473ad669aaa28",
+        "references/documentation.md": "988c970f579f6cf653ae582ad3f2ba4b866da43d60c69cba8a9f663579777b99",
+        "references/error-handling.md": "ae13fd54417195d6b89e17e9153e5902b28b6ac562eaa77237769d61e5b4842a",
+        "references/ownership-and-pointers.md": "17a6520b8145ec1a9da40b5a5d8262fec7ba19674f8e4a426c8f9fc442d9dffc",
+        "references/performance.md": "ab2ee09c1471ae3c3047ac92180c8e8fbaad490be0221c1b1cfcc9c5535c7e87",
+        "references/testing.md": "1397133aed2aec2deca86d56ed703876bd2559d3edfa75e45030e54351df822b",
+        "references/traits-and-generics.md": "c3a0fbf7b79ca83e8ab97c891c44e1bb374b492a079c81a550e5b2bf5fbf74cd",
+        "SKILL.md": "06a3b029ab1d0aee261a510575a9cb938454d113774d97ea8094161965ba2891"
+      }
+    },
+    {
+      "name": "htmx",
+      "repository": "https://github.com/damusix/skills",
+      "revision": "6383252982498931a5b162db2046ff7856b33d34",
+      "path": "htmx",
+      "sha256": {
+        ".tessl-plugin/plugin.json": "99731a8a05fe0feef6ec2aa12bf9492af7b77ebc6b1b54f3b7f84fc213463209",
+        "references/attributes.md": "61aad2a86a3b244906eb1ddf2f42739cb4bebf26d7d01d6065c382079e1fdff6",
+        "references/events-api.md": "47c6f9319ebf08c596bab80f55a6c196575ad6224c18deda94a74eca51033fbc",
+        "references/extensions.md": "1e4f9b2eddf610f3d4d1cdfd549e2a8bf3fd5f011a982d953c4e85bbc2c9dbf5",
+        "references/gotchas.md": "55ae30e09e3c072fe46f5db69b673d7a0245a52364c0562f91c024994b1982c1",
+        "references/patterns.md": "fff0a7df84d027c6b0e484bd8bd1bbdb876933cdc8d872113ae0484fc581ef41",
+        "references/REFERENCE.md": "c6c754c53fce4b1de762751c0247009453b9def35b907a08bb010d4554853951",
+        "references/requests.md": "bee6e73d108fa76b8afe595082f830348eeff7c775c43359b1adbc056c702970",
+        "references/swapping.md": "7c92784dc721b962ba50857e7c9d308a8769d1728b3dcabd1389535a6a76e8ea",
+        "SKILL.md": "1b512b930d9e98832faace1afc77871bce200016b10766b32b51c8f6f5a94f3f"
+      }
+    },
+    {
+      "name": "frontend-design",
+      "repository": "https://github.com/anthropics/skills",
+      "revision": "dbd4588f9e1033efb41dad4bef2f7947c8993d44",
+      "path": "skills/frontend-design",
+      "sha256": {
+        "LICENSE.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+        "SKILL.md": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+      }
+    }
+  ]
+}
