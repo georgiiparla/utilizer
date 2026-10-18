@@ -67,7 +67,7 @@ jobs:
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
 
-      - name: Test installer in Windows PowerShell 5.1
+      - name: Test install, update, uninstall and purge in Windows PowerShell 5.1
         run: powershell.exe -NoProfile -File tests/installer.ps1 -Executable target/x86_64-pc-windows-msvc/release/utilizer.exe
 
       - name: Prepare executable and checksum

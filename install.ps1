@@ -47,6 +47,7 @@ try {
     Write-Host 'Run: utilizer'
     Write-Host 'Use the four-digit code printed in its console to open the local player.'
     Write-Host 'Uninstall: irm https://raw.githubusercontent.com/georgiiparla/utilizer/main/uninstall.ps1 | iex'
+    Write-Host 'Newer executables also support: utilizer uninstall [--purge]'
 } finally {
     # Remove only the unique temporary directory created by this script.
     $resolvedTemporary = [IO.Path]::GetFullPath($temporaryDirectory)

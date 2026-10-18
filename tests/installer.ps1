@@ -79,8 +79,6 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $data 'utilizer.sqlite3'))) { throw 'Default uninstall removed playlists' }
     if ([InstallerTestEnvironment]::UserPath -cne 'C:\Keep;C:\KeepToo') { throw 'Uninstaller damaged PATH or left installation entries' }
     & $uninstaller
-    & $uninstaller -RemoveData
-    if (Test-Path -LiteralPath (Join-Path $data 'utilizer.sqlite3')) { throw 'Explicit data removal did not remove database' }
     if (-not (Test-Path -LiteralPath (Join-Path $data 'keep.txt')) -or
         -not (Test-Path -LiteralPath (Join-Path $installDirectory 'keep.txt'))) { throw 'Uninstaller removed unrelated files' }
 
@@ -103,8 +101,28 @@ try {
     } finally {
         [IO.Directory]::Delete($installDirectory)
     }
+    New-Item -ItemType Directory -Path $installDirectory | Out-Null
+    'app file' | Set-Content -LiteralPath (Join-Path $installDirectory 'utilizer.exe')
+    New-Item -ItemType Directory -Path (Join-Path $data 'cache\nested') -Force | Out-Null
+    'cache' | Set-Content -LiteralPath (Join-Path $data 'cache\nested\entry')
+    # A nested junction must also be refused before any purge deletion begins.
+    $junction = Join-Path $data 'linked-cache'
+    New-Item -ItemType Junction -Path $junction -Target $realDirectory | Out-Null
+    try {
+        $rejected = $false
+        try { & $uninstaller -Purge } catch { $rejected = $_.ToString() -match 'Refusing to uninstall through a link' }
+        if (-not $rejected -or -not (Test-Path -LiteralPath (Join-Path $installDirectory 'utilizer.exe'))) {
+            throw 'Purge followed a nested junction or deleted before preflight completed'
+        }
+    } finally {
+        [IO.Directory]::Delete($junction)
+    }
+    & $uninstaller -Purge
+    if ((Test-Path -LiteralPath $data) -or (Test-Path -LiteralPath $installDirectory)) { throw 'Purge left an owned application folder' }
+    if (-not (Test-Path -LiteralPath (Join-Path $realDirectory 'utilizer.exe'))) { throw 'Purge removed files outside its owned folders' }
+    & $uninstaller -RemoveData
     if ([System.Environment]::GetEnvironmentVariable('Path', 'User') -ne $originalPath) { throw 'Real user PATH changed' }
-    Write-Host 'PASS: install/update, checksum rejection, running-process guards, uninstall/repeat, PATH cleanup, optional data removal, unrelated-file protection, and junction refusal'
+    Write-Host 'PASS: install/update, checksum rejection, running-process guards, uninstall/repeat, PATH cleanup, full purge, unrelated-file protection, and junction refusal'
 } finally {
     [void]$accelerators::Remove('Environment')
     $resolved = [IO.Path]::GetFullPath($sandbox)

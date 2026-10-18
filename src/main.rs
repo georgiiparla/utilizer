@@ -13,6 +13,8 @@ use utilizer::{
     web::{self, App},
 };
 
+mod uninstall;
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(error) = run().await {
@@ -22,7 +24,16 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
+    if args.peek().is_some_and(|arg| arg == "uninstall") {
+        args.next();
+        let purge = match (args.next().as_deref(), args.next()) {
+            (None, None) => false,
+            (Some("--purge"), None) => true,
+            _ => return Err("Usage: utilizer uninstall [--purge]".into()),
+        };
+        return tokio::task::spawn_blocking(move || uninstall::schedule(purge)).await?;
+    }
     let mut cs2_path = None;
     let mut browser = true;
     while let Some(arg) = args.next() {
@@ -33,7 +44,7 @@ async fn run() -> Result<()> {
             }
             "--help" | "-h" => {
                 println!(
-                    "utilizer [--cs2-path <CS2 installation>] [--no-browser]\nKeep this console open while using the local practice player.\n\nUninstall in PowerShell after closing Utilizer:\nirm https://raw.githubusercontent.com/georgiiparla/utilizer/main/uninstall.ps1 | iex\nPlaylists and exported CS2 files are kept."
+                    "utilizer [--cs2-path <CS2 installation>] [--no-browser]\nKeep this console open while using the local practice player.\n\nutilizer uninstall          Remove the app and user PATH entry; keep playlists.\nutilizer uninstall --purge  Also delete Utilizer's local data folder.\nClose any running Utilizer player first. Exported CS2 cfg files and bindings are kept."
                 );
                 return Ok(());
             }
