@@ -187,6 +187,24 @@ pub fn router(app: Arc<App>) -> Router {
             }),
         )
         .route(
+            "/assets/logo.svg",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/svg+xml")],
+                    include_str!("../assets/logo.svg"),
+                )
+            }),
+        )
+        .route(
+            "/assets/logo.png",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/png")],
+                    include_bytes!("../assets/logo.png").as_slice(),
+                )
+            }),
+        )
+        .route(
             "/assets/logo.ico",
             get(|| async {
                 (
@@ -427,7 +445,6 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
 struct ViewQuery {
     point: Option<String>,
     map: Option<String>,
-    area: Option<String>,
     revision: Option<String>,
     mode: Option<String>,
 }
@@ -436,13 +453,11 @@ struct MapPoint {
     key: String,
     name: String,
     command: String,
-    world: [f64; 3],
     x: f64,
     y: f64,
     placed: bool,
     reason: &'static str,
     selected: bool,
-    area: String,
 }
 
 impl MapPoint {
@@ -472,31 +487,21 @@ impl MapPoint {
             key,
             name,
             command: position.command(),
-            world: position.origin,
             x,
             y,
             placed: projected.is_some(),
             reason,
             selected: false,
-            area: String::new(),
         }
     }
 }
 
-struct Area {
-    key: String,
-    path: String,
-    count: usize,
-    selected: bool,
-}
 struct MapView {
     mode: &'static str,
     points: Vec<MapPoint>,
     selected: String,
     map: &'static maps::Map,
     maps: &'static [maps::Map],
-    areas: Vec<Area>,
-    area: String,
     detected: String,
     revision: String,
 }
@@ -576,50 +581,11 @@ async fn map_view(app: &App, query: ViewQuery) -> Result<MapView> {
             Ok(points)
         })
         .await?;
-    let coords: Vec<_> = points
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| p.placed)
-        .map(|(i, p)| (i, [p.x, p.y, p.world[2]]))
-        .collect();
-    let mut areas = Vec::new();
-    for indices in maps::groups(&coords) {
-        let key = indices
-            .iter()
-            .map(|&i| points[i].key.as_str())
-            .min()
-            .unwrap_or("")
-            .to_owned();
-        let mut path = String::new();
-        for i in indices.iter().copied() {
-            let point = &mut points[i];
-            point.area = key.clone();
-            // A single SVG path paints the union without dark overlap seams.
-            path.push_str(&format!(
-                "M {} {} h {} v {} h -{} Z ",
-                point.x - maps::ZONE_SIZE / 2.0,
-                point.y - maps::ZONE_SIZE / 2.0,
-                maps::ZONE_SIZE,
-                maps::ZONE_SIZE,
-                maps::ZONE_SIZE
-            ));
-        }
-        areas.push(Area {
-            selected: query.area.as_deref() == Some(&key),
-            key,
-            path,
-            count: indices.len(),
-        });
-    }
-    let area = query
-        .area
-        .filter(|key| areas.iter().any(|area| &area.key == key))
-        .unwrap_or_default();
-    points.retain(|point| !area.is_empty() && point.area == area);
+    points.retain(|point| point.placed);
     let selected = points
         .iter()
         .find(|p| Some(&p.key) == query.point.as_ref())
-        .or_else(|| points.last())
+        .or_else(|| points.first())
         .map(|p| p.key.clone())
         .unwrap_or_default();
     for point in &mut points {
@@ -627,12 +593,9 @@ async fn map_view(app: &App, query: ViewQuery) -> Result<MapView> {
     }
     use std::hash::{Hash, Hasher};
     let mut revision = std::collections::hash_map::DefaultHasher::new();
-    (map.code, mode, &detected, &selected, &area).hash(&mut revision);
+    (map.code, mode, &detected, &selected).hash(&mut revision);
     for point in &points {
         (&point.key, &point.name, &point.command, point.reason).hash(&mut revision);
-    }
-    for region in &areas {
-        (&region.key, &region.path, region.count).hash(&mut revision);
     }
     Ok(MapView {
         mode,
@@ -640,8 +603,6 @@ async fn map_view(app: &App, query: ViewQuery) -> Result<MapView> {
         selected,
         map,
         maps: &maps::MAPS,
-        areas,
-        area,
         detected,
         revision: format!("{:x}", revision.finish()),
     })
@@ -668,8 +629,8 @@ async fn locations(
             let mut response = html(&LocationsTemplate { view: &view });
             if previous.is_none() {
                 let url = format!(
-                    "/?map={}&mode={}&area={}&point={}",
-                    view.map.code, view.mode, view.area, view.selected
+                    "/?map={}&mode={}&point={}",
+                    view.map.code, view.mode, view.selected
                 );
                 if let Ok(value) = url.parse() {
                     response.headers_mut().insert("hx-replace-url", value);

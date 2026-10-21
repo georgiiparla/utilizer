@@ -144,7 +144,7 @@ pub fn find(code: &str) -> Option<&'static Map> {
     MAPS.iter().find(|map| map.code == code)
 }
 
-pub const ZONE_SIZE: f64 = 48.0;
+pub const ZONE_SIZE: f64 = 32.0;
 
 /// Connected unions of compact squares; do not join separate height bands.
 /// This groups starting positions, never grenade coverage or walkable geometry.
@@ -276,15 +276,15 @@ mod tests {
 mod group_tests {
     use super::*;
     #[test]
-    fn connected_rectangles_handle_singletons_duplicates_chains_and_height_separation() {
+    fn connected_squares_handle_singletons_duplicates_chains_and_height_separation() {
         assert!(groups(&[]).is_empty());
         assert_eq!(groups(&[(9, [2.0, 2.0, 0.0])]), vec![vec![9]]);
         assert_eq!(
             groups(&[
                 (0, [0.0, 0.0, 0.0]),
                 (1, [0.0, 0.0, 0.0]),
-                (2, [42.0, 0.0, 0.0]),
-                (3, [84.0, 0.0, 0.0]),
+                (2, [28.0, 0.0, 0.0]),
+                (3, [56.0, 0.0, 0.0]),
                 (4, [400.0, 400.0, 0.0]),
                 (5, [0.0, 0.0, 300.0])
             ]),
@@ -295,11 +295,19 @@ mod group_tests {
         assert_eq!(
             groups(&[
                 (0, [0.0, 0.0, 0.0]),
-                (1, [48.0, 48.0, 0.0]),
-                (2, [96.01, 48.0, 0.0]),
-                (3, [48.0, 48.0, 64.01]),
+                (1, [32.0, 0.0, 0.0]),
+                (2, [64.01, 0.0, 0.0]),
+                (3, [32.0, 0.0, 64.01]),
             ]),
             vec![vec![0, 1], vec![2], vec![3]]
+        );
+        assert_eq!(
+            groups(&[(0, [0.0, 0.0, 0.0]), (1, [32.0, 32.0, 0.0])]),
+            vec![vec![0, 1]]
+        );
+        assert_eq!(
+            groups(&[(0, [0.0, 0.0, 0.0]), (1, [30.0, 30.0, 64.0])]),
+            vec![vec![0, 1]]
         );
     }
 }

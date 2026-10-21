@@ -15,6 +15,8 @@ use utilizer::{
 };
 
 mod pwa;
+#[cfg(windows)]
+mod tray;
 mod uninstall;
 
 #[tokio::main(flavor = "current_thread")]
@@ -129,8 +131,15 @@ async fn run() -> Result<()> {
         println!("  Code  {code}");
     }
     println!();
-    println!("  Running. Keep this terminal open. Ctrl+C to stop.\n");
+    println!("  Running. Keep this terminal open. Ctrl+C or tray Exit to stop.\n");
     let (stop, mut server_stop) = watch::channel(false);
+    let mut requested_stop = stop.subscribe();
+    #[cfg(windows)]
+    let tray = {
+        let app = app.clone();
+        let stop = stop.clone();
+        tokio::task::spawn_blocking(move || tray::Tray::start(app, stop, code)).await??
+    };
     let mut worker = tokio::spawn(ingest(engine, app.clone(), stop.subscribe()));
     let router = web::router(app.clone());
     let mut server = tokio::spawn(async move {
@@ -150,6 +159,7 @@ async fn run() -> Result<()> {
     let mut worker_done = false;
     let outcome: Result<()> = tokio::select! {
         result = tokio::signal::ctrl_c() => result.map_err(Into::into),
+        _ = requested_stop.changed() => Ok(()),
         result = &mut server => { server_done = true; result.map_err(Into::into).and_then(|r| r.map_err(Into::into)) },
         result = &mut worker => { worker_done = true; result.map_err(Into::into).and_then(|r| r) },
     };
@@ -161,6 +171,8 @@ async fn run() -> Result<()> {
     if !server_done {
         server.await??;
     }
+    #[cfg(windows)]
+    tokio::task::spawn_blocking(move || drop(tray)).await?;
     tokio::task::spawn_blocking(move || drop(app)).await?;
     outcome
 }

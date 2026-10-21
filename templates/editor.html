@@ -1,46 +1,31 @@
-<dialog id="editor" aria-label="{{ mode }}">
-{% if mode == "help" %}
-<pre class="help-guide">Setup
-Keep Utilizer running.
-Enable CS2 console: Settings > Game > Developer Console.
-Open the console (~):
-  con_logfile console.log
-Then join a local practice map.
-In Utilizer: Ctrl+S. Back in CS2:
-  exec cfg
-
-Capture
-Stand and aim, then F6 records the position.
-Mode: Captures > zone > double-click > name > Save.
-Delete discards a capture.
-
-Add manually
-Add spot > name + position > Save.
-  setpos X Y Z;setang P Y R
-
-Practice
-Mode: Saved > zone > select a spot > Ctrl+S.
-In CS2: exec cfg (repeat after every sync).
-  ← / →   Previous / next (wraps)
-  ↑       Repeat current spot
-  ↓       Look down, keep the spot's yaw
-  ut_7    Jump to slot 7, without exec
-Chat: [number/total] name.
-Slots follow the whole saved map list.
-
-Edit
-Double-click or Enter opens details.
-Click outside or Escape closes.
-Save/Delete are local; Ctrl+S writes cfg.cfg.
-Saved and Captures show separate sets.</pre>
+<dialog id="editor" aria-labelledby="editor-title">
+<div class="editor-heading">
+<h2 id="editor-title">{% if mode == "binds" %}Binds{% else if point.is_empty() %}Add spot{% else if point.starts_with("capture-") %}Save capture{% else %}Edit spot{% endif %}</h2>
+</div>
+{% if mode == "binds" %}
+<form method="post" action="/manage" hx-post="/manage" hx-target="#feedback" hx-swap="innerHTML" class="editor-form">
+<input type="hidden" name="kind" value="binds"><input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="stamp" value="{{ stamp }}">
+<input type="hidden" name="capture_key" value="{{ capture_key }}" data-capture-key-value>
+<div class="bind-row"><label id="capture-key-label" for="capture-key">Capture spot</label><button id="capture-key" type="button" data-capture-key aria-labelledby="capture-key-label capture-key" aria-pressed="false">{{ capture_key }}</button></div>
+<div class="editor-actions"><button name="action" value="save">Save</button></div>
+</form>
 {% else %}
 <form method="post" action="/manage" hx-post="/manage" hx-target="#feedback" hx-swap="innerHTML" class="editor-form">
 <input type="hidden" name="kind" value="{{ mode }}"><input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="point" value="{{ point }}">
 <input type="hidden" name="stamp" value="{{ stamp }}">
-<input name="name" aria-label="Spot name" placeholder="Name" value="{{ name }}" maxlength="160" autocomplete="off" required autofocus>
-<textarea name="position" aria-label="Position" placeholder="setpos X Y Z;setang P Y R" maxlength="256" rows="3" spellcheck="false" required>{{ position }}</textarea>
-<input type="url" name="link" aria-label="Reference URL" placeholder="Reference URL" value="{{ link }}" maxlength="2048">
+<div class="editor-field">
+<label for="spot-name">Name</label>
+<input id="spot-name" name="name" aria-label="Spot name" placeholder="Spot name" value="{{ name }}" maxlength="160" autocomplete="off" required autofocus>
+</div>
+<div class="editor-field">
+<label for="spot-position">Position</label>
+<textarea id="spot-position" name="position" aria-label="Position" placeholder="setpos X Y Z;setang P Y R" maxlength="256" rows="3" spellcheck="false" required>{{ position }}</textarea>
+</div>
+<div class="editor-field">
+<label for="spot-link">Reference URL <span>(optional)</span></label>
+<input id="spot-link" type="url" name="link" aria-label="Reference URL" placeholder="https://" value="{{ link }}" maxlength="2048">
 {% if !link.is_empty() %}<a class="reference" href="{{ link }}" target="_blank" rel="noopener noreferrer">Reference</a>{% endif %}
+</div>
 <div class="editor-actions">
 <button name="action" value="save">Save</button>
 {% if !point.is_empty() %}<button name="action" value="delete" formnovalidate>Delete</button>{% endif %}

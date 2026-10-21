@@ -810,7 +810,12 @@ fn compiled_map_preserves_ruby_down_chat_and_numbered_shortcuts() {
         .unwrap();
     assert!(first.contains("alias ut_prev ut_7"));
     assert!(state.contains("say_team Utilizer capture;echoln [UTILIZER_CAPTURE];getpos"));
-    assert!(!state.contains("exec "));
+    assert!(state.contains("bind UPARROW \"exec cfg;ut_current\"\n"));
+    assert!(
+        !state
+            .lines()
+            .any(|line| line.starts_with("exec ") || line == "ut_current")
+    );
     assert!(!state.contains("spots loaded"));
     assert!(cfg::render_map_player("de_mirage", &spots, Some(7)).is_err());
     let empty = cfg::render_map_player("de_mirage", &[], None).unwrap();
@@ -881,6 +886,7 @@ fn compiled_export_replaces_owned_state_clears_stale_slots_and_preflights_confli
     let paths = cfg::export_map_player(root, "de_mirage", &spots[..2], Some(102)).unwrap();
     assert_eq!(paths, vec![root.canonicalize().unwrap().join("cfg.cfg")]);
     let state = fs::read_to_string(&paths[0]).unwrap();
+    assert!(state.contains("bind UPARROW \"exec cfg;ut_current\"\n"));
     assert!(state.contains("alias ut_7 \"\"\n"));
     assert!(state.contains("alias ut_12 \"\"\n"));
     assert!(state.contains("alias ut_current ut_2\n"));
@@ -901,12 +907,48 @@ fn compiled_export_replaces_owned_state_clears_stale_slots_and_preflights_confli
         "keep legacy file"
     );
     cfg::export_map_player(root, "de_mirage", &[], None).unwrap();
+    let empty = fs::read_to_string(root.join("cfg.cfg")).unwrap();
+    assert!(empty.contains("bind UPARROW \"exec cfg;ut_current\"\n"));
+    assert!(empty.contains("alias ut_current \"\"\n"));
     assert!(
         fs::read_to_string(root.join("cfg.cfg"))
             .unwrap()
             .contains("alias ut_7 \"\"")
     );
     assert!(!root.join("ut_1.cfg").exists());
+}
+
+#[test]
+fn capture_rebinding_clears_prior_owned_keys_across_syncs_and_rejects_injection() {
+    let directory = tempdir().unwrap();
+    let root = directory.path();
+    let spots = compiled_spots(1);
+    cfg::export_map_player(root, "de_mirage", &spots, None).unwrap();
+    for key in [
+        "F8",
+        "K",
+        "MOUSE4",
+        "MOUSE5",
+        "MWHEELUP",
+        "MWHEELDOWN",
+        "F6",
+    ] {
+        cfg::export_map_player_with_capture_key(root, "de_mirage", &spots, None, key).unwrap();
+        let cfg = fs::read_to_string(root.join("cfg.cfg")).unwrap();
+        assert!(cfg.contains(&format!("bind {key} ut_save\n")));
+        assert!(!cfg.contains(&format!("unbind {key}\n")));
+    }
+    let before = fs::read(root.join("cfg.cfg")).unwrap();
+    let cfg = String::from_utf8(before.clone()).unwrap();
+    assert!(cfg.contains("unbind F8\n"));
+    assert!(cfg.contains("unbind K\n"));
+    for key in ["F6;quit", "UPARROW", "F06", "F13", "CTRL+K"] {
+        assert!(
+            cfg::export_map_player_with_capture_key(root, "de_mirage", &spots, None, key).is_err()
+        );
+        assert_eq!(fs::read(root.join("cfg.cfg")).unwrap(), before);
+    }
+    assert_eq!(fs::read_dir(root).unwrap().count(), 1);
 }
 
 #[cfg(windows)]

@@ -107,7 +107,7 @@ async fn managed(address: SocketAddr, auth: &str, body: &str) -> Reply {
     };
     let kind = value("kind");
     let mut body = body.to_owned();
-    if kind == "spot" && !value("point").is_empty() {
+    if kind == "binds" || (kind == "spot" && !value("point").is_empty()) {
         let path = format!(
             "/editor?kind={kind}&map={}&point={}",
             value("map"),
@@ -323,6 +323,87 @@ async fn editor_crud_capture_review_and_sync_validate_inputs_and_preserve_game_f
     assert!(!state.contains("Other map"));
     assert!(!root.join("ut_2.cfg").exists());
     assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    let binds = request(
+        address,
+        "GET",
+        "/editor?kind=binds&map=de_mirage",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(binds.status, 200);
+    assert!(binds.body.contains("Capture spot"));
+    assert!(binds.body.contains("name=\"capture_key\" value=\"F6\""));
+    let old_stamp = binds
+        .body
+        .split("name=\"stamp\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    for key in ["", "UPARROW", "ESCAPE", "CTRL+F8", "F8;quit", "F08", "F13"] {
+        let body = fields(&[
+            ("kind", "binds"),
+            ("map", "de_mirage"),
+            ("action", "save"),
+            ("capture_key", key),
+        ]);
+        assert_eq!(managed(address, &auth, &body).await.status, 400);
+    }
+    assert!(
+        store
+            .lock()
+            .unwrap()
+            .setting("capture_key")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        managed(
+            address,
+            &auth,
+            "kind=binds&map=de_mirage&action=save&capture_key=F8"
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .setting("capture_key")
+            .unwrap()
+            .as_deref(),
+        Some("F8")
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("cfg.cfg")).unwrap(),
+        state,
+        "Saving a binding does not export game files"
+    );
+    let stale = format!("kind=binds&map=de_mirage&action=save&capture_key=F9&stamp={old_stamp}");
+    assert_eq!(
+        request(address, "POST", "/manage", &auth, &stale)
+            .await
+            .status,
+        400
+    );
+    let reopened = request(
+        address,
+        "GET",
+        "/editor?kind=binds&map=de_mirage",
+        &auth,
+        "",
+    )
+    .await;
+    assert!(reopened.body.contains("name=\"capture_key\" value=\"F8\""));
+    assert_eq!(managed(address, &auth, &sync).await.status, 200);
+    let rebound = fs::read_to_string(root.join("cfg.cfg")).unwrap();
+    assert!(rebound.contains("bind F8 ut_save\n"));
+    assert!(rebound.contains("unbind F6\n"));
+    assert!(!rebound.contains("bind F6 ut_save\n"));
     fs::write(root.join("cfg.cfg"), "unrelated").unwrap();
     assert_eq!(managed(address, &auth, &sync).await.status, 400);
     assert_eq!(
@@ -355,6 +436,24 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
             capture(None, [0.0, 0.0, 64.0]).position,
         )
         .unwrap();
+    let saved_distant = store
+        .save_map_spot(
+            None,
+            "de_mirage",
+            "Distant saved spot",
+            None,
+            capture(None, [-1730.0, 213.0, 64.0]).position,
+        )
+        .unwrap();
+    store
+        .save_map_spot(
+            None,
+            "de_inferno",
+            "Saved elsewhere",
+            None,
+            capture(None, [0.0; 3]).position,
+        )
+        .unwrap();
     let id = store
         .record_capture(&capture(Some("de_mirage"), [-730.0, -787.0, 64.0]))
         .unwrap();
@@ -379,6 +478,7 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
     assert!(!reply.body.contains("<label"));
     assert!(reply.headers.contains("manifest-src 'self'"));
     assert!(reply.body.contains("href=\"/manifest.webmanifest\""));
+    assert!(reply.body.contains("src=\"/assets/logo.svg\""));
     assert!(!reply.body.contains("/assets/dev.js"));
     let manifest = request(address, "GET", "/manifest.webmanifest", "", "").await;
     assert_eq!(manifest.status, 200);
@@ -389,6 +489,39 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
         let icon = request(address, "HEAD", &format!("/assets/icon-{size}.png"), "", "").await;
         assert_eq!(icon.status, 200);
         assert!(icon.headers.contains("content-type: image/png"));
+    }
+    let logo = request(address, "HEAD", "/assets/logo.png", "", "").await;
+    assert_eq!(logo.status, 200);
+    assert!(logo.headers.contains("content-type: image/png"));
+    let vector = request(address, "GET", "/assets/logo.svg", "", "").await;
+    assert_eq!(vector.status, 200);
+    assert!(vector.headers.contains("content-type: image/svg+xml"));
+    // Production serves every runtime asset from the embedded executable.
+    for path in [
+        "/assets/app.js",
+        "/assets/theme.js",
+        "/assets/htmx.js",
+        "/assets/style.css",
+        "/assets/fonts/plex.ttf",
+        "/assets/logo.ico",
+    ] {
+        assert_eq!(
+            request(address, "HEAD", path, "", "").await.status,
+            200,
+            "{path}"
+        );
+    }
+    for map in [
+        "dust2", "mirage", "inferno", "nuke", "ancient", "cache", "anubis",
+    ] {
+        for suffix in ["", "-dark"] {
+            let path = format!("/assets/maps/{map}{suffix}.svg");
+            assert_eq!(
+                request(address, "HEAD", &path, "", "").await.status,
+                200,
+                "{path}"
+            );
+        }
     }
     assert_eq!(
         request(address, "GET", "/assets/dev.js", "", "")
@@ -433,18 +566,36 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
     );
     let reply = request(address, "GET", "/", &authenticated, "").await;
     assert!(reply.body.contains("/assets/maps/mirage.svg"));
-    assert!(reply.body.contains("clipPathUnits=\"userSpaceOnUse\""));
-    assert!(reply.body.contains("clip-rule=\"evenodd\""));
+    assert!(!reply.body.contains("zone-map-outline"));
+    assert!(!reply.body.contains("Area with"));
+    assert!(!reply.body.contains("data-zone-list"));
+    assert!(reply.body.contains("data-spot-list>"));
     assert!(
         reply
             .body
-            .contains("<g clip-path=\"url(#zone-map-outline)\">")
+            .contains("data-mode=\"spots\" data-point=\"spot-1\"")
     );
-    assert!(reply.body.contains("Area with"));
-    assert!(reply.body.contains("h 48 v 48 h -48 Z"));
-    assert!(!reply.body.contains("class=\"spot"));
+    assert!(reply.body.contains("class=\"spot selected\""));
+    assert!(reply.body.contains("<circle class=\"dot-core\" r=\"5\"/>"));
+    assert!(reply.body.contains("Distant saved spot"));
+    assert!(!reply.body.contains("Saved elsewhere"));
+    assert!(reply.body.contains("id=\"spot-menu\" popover=\"auto\""));
+    assert!(
+        reply
+            .body
+            .contains("data-copy-position>Copy setpos</button>")
+    );
+    assert!(!reply.body.contains("data-map-detected"));
+    assert!(!reply.body.contains("class=\"zone-name\""));
     assert!(!reply.body.contains(">All</a>"));
     let reply = request(address, "GET", "/?area=spot-1", &authenticated, "").await;
+    assert!(!reply.body.contains("data-zone-list"));
+    assert!(reply.body.contains("data-spot-list>"));
+    assert!(reply.body.contains("Distant saved spot"));
+    assert!(reply.body.contains(&format!(
+        "data-position=\"{}\"",
+        capture(None, [0.0, 0.0, 64.0]).position.command()
+    )));
     assert!(reply.body.contains("&#60;img src=x onerror=alert(1)&#62;"));
     assert!(!reply.body.contains("<img src=x"));
     assert!(!reply.body.contains("<summary>Test</summary>"));
@@ -452,12 +603,28 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
     assert!(reply.body.contains(">Add spot</button>"));
     assert!(reply.body.contains(">Mode: Saved</option>"));
     assert!(reply.body.contains("data-mode-select"));
-    assert!(reply.body.contains("data-editor=\"help\">Help</button>"));
+    assert!(reply.body.contains(
+        "<span>Utilizer</span><button type=\"button\" data-editor=\"binds\" aria-label=\"Binds\">"
+    ));
     assert!(!reply.body.contains(">Sync</button>"));
     assert!(!reply.body.contains("<title>1 spots"));
     assert!(!reply.body.contains("data-preview"));
     assert!(!reply.body.contains("Capture #"));
     assert!(!output.exists());
+    let selected = request(
+        address,
+        "GET",
+        &format!("/locations?area=spot-1&point=spot-{saved_distant}"),
+        &authenticated,
+        "",
+    )
+    .await;
+    assert!(selected.body.contains(&format!(
+        "data-mode=\"spots\" data-point=\"spot-{saved_distant}\""
+    )));
+    assert!(selected.headers.contains(&format!(
+        "hx-replace-url: /?map=de_mirage&mode=spots&point=spot-{saved_distant}"
+    )));
     let reply = request(
         address,
         "GET",
@@ -468,10 +635,23 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
     .await;
     assert!(reply.body.contains("data-mode=\"captures\""));
     assert!(reply.body.contains(">Mode: Captures</option>"));
+    assert!(
+        reply
+            .body
+            .contains("data-editor=\"spot\" disabled>Add spot</button>")
+    );
+    assert!(
+        reply.body.find(">Mode: Saved</option>").unwrap()
+            < reply.body.find(">Mode: Captures</option>").unwrap()
+    );
     assert!(!reply.body.contains("<img src=x"));
     assert!(!reply.body.contains("&#60;img"));
-    assert!(reply.body.contains("cx=\"500\" cy=\"500\""));
-    assert!(reply.body.contains("Area with"));
+    assert!(reply.body.contains("transform=\"translate(500 500)\""));
+    assert!(!reply.body.contains("Area with"));
+    assert!(!reply.body.contains("class=\"zone-name\""));
+    assert!(!reply.body.contains("data-zone-list"));
+    assert!(reply.body.contains("data-spot-list>"));
+    assert!(!reply.body.contains("\"area\":"));
     assert!(!reply.body.contains("<!doctype"));
     let revision = reply
         .body
@@ -505,7 +685,8 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
         )
         .await;
         assert!(!reply.body.contains(reason));
-        assert!(!reply.body.contains("class=\"spot"));
+        assert!(!reply.body.contains(&format!("id=\"point-capture-{id}\"")));
+        assert!(reply.body.contains("data-spot-list>"));
         assert!(
             !reply
                 .body
@@ -564,6 +745,27 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
         assert!(dark.headers.contains("image/svg+xml"));
         assert!(dark.body.contains("<svg"));
     }
+    Store::open(&database)
+        .unwrap()
+        .set_setting("active_map", "de_inferno")
+        .unwrap();
+    let detected = request(
+        address,
+        "GET",
+        "/locations?map=de_mirage",
+        &authenticated,
+        "",
+    )
+    .await;
+    assert!(detected.body.contains("data-map=\"de_inferno\""));
+    assert!(detected.body.contains("data-map-detected"));
+    assert!(detected.body.contains("Map detected in CS2"));
+    Store::open(&database)
+        .unwrap()
+        .set_setting("active_map", "")
+        .unwrap();
+    let manual = request(address, "GET", "/locations", &authenticated, "").await;
+    assert!(!manual.body.contains("data-map-detected"));
     let theme = request(address, "GET", "/assets/theme.js", "", "").await;
     assert_eq!(theme.status, 200);
     assert!(theme.headers.contains("text/javascript"));
@@ -611,7 +813,7 @@ async fn map_login_projection_unknown_maps_escaping_errors_and_logout() {
 
 #[cfg(feature = "dev")]
 #[tokio::test(flavor = "current_thread")]
-async fn preview_reads_capture_fixtures_without_a_test_feature_and_filters_zones() {
+async fn preview_reads_capture_fixtures_and_lists_captures_without_zones() {
     use std::{io::Write, time::Instant};
     use utilizer::dev::{self, Preview};
     let directory = tempdir().unwrap();
@@ -680,7 +882,7 @@ async fn preview_reads_capture_fixtures_without_a_test_feature_and_filters_zones
         "",
     )
     .await;
-    assert!(filtered.body.contains("cx=\"500\" cy=\"500\""));
+    assert!(filtered.body.contains("transform=\"translate(500 500)\""));
     assert!(filtered.body.contains(&format!("Capture #{received}")));
     assert!(!installation.cfg.join("console_utilizer_rust").exists());
     let (first, nearby, distant) = {
@@ -715,20 +917,49 @@ async fn preview_reads_capture_fixtures_without_a_test_feature_and_filters_zones
             .contains(&format!("<span hx-disable>Capture #{nearby}</span>"))
     );
     assert!(
-        !filtered
+        filtered
             .body
             .contains(&format!("<span hx-disable>Capture #{distant}</span>"))
     );
-    assert!(filtered.body.contains("Area with 2 spots"));
-    for path in [
-        "/locations",
-        "/locations?area=invalid",
-        "/locations?mode=captures&point=capture-1",
-    ] {
+    assert!(!filtered.body.contains("Area with"));
+    let direct = request(address, "GET", "/locations?mode=captures", &auth, "").await;
+    let first_key = direct
+        .body
+        .split("id=\"point-")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert!(direct.body.contains(&format!(
+        "data-mode=\"captures\" data-point=\"{first_key}\""
+    )));
+    let explicit = request(
+        address,
+        "GET",
+        &format!("/locations?mode=captures&point=capture-{distant}"),
+        &auth,
+        "",
+    )
+    .await;
+    assert!(explicit.body.contains(&format!(
+        "data-mode=\"captures\" data-point=\"capture-{distant}\""
+    )));
+    for id in [received, first, nearby, distant] {
+        assert!(direct.body.contains(&format!("id=\"point-capture-{id}\"")));
+        assert!(
+            direct
+                .body
+                .contains(&format!("aria-label=\"Select Capture #{id}\""))
+        );
+    }
+    assert!(!direct.body.contains("Area with"));
+    for path in ["/locations", "/locations?area=invalid"] {
         let reply = request(address, "GET", path, &auth, "").await;
         assert_eq!(reply.status, 200);
-        assert!(!reply.body.contains("class=\"spot"));
-        assert!(!reply.body.contains("class=\"dot"));
+        assert!(reply.body.contains("class=\"spot"));
+        assert!(reply.body.contains("class=\"dot"));
+        assert!(!reply.body.contains("data-zone-list"));
     }
     server.abort();
     let _ = server.await;

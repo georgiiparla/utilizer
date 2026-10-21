@@ -23,8 +23,8 @@ dev *args: _dev-setup
     watchexec --restart --shell=none --debounce=250ms --stop-signal=KILL \
         --workdir "{{justfile_directory()}}" --env UTILIZER_DEV_WATCHER=1 \
         --watch src --watch templates --watch .cargo \
-        --watch Cargo.toml --watch Cargo.lock --watch rust-toolchain.toml \
-        --watch assets/logo.ico --watch assets/htmx-2.0.8.min.js \
+        --watch Cargo.toml --watch Cargo.lock --watch rust-toolchain.toml --watch build.rs \
+        --watch assets/logo.ico --watch assets/logo.svg --watch assets/logo.png --watch assets/utilizer.rc --watch assets/htmx-2.0.8.min.js \
         --watch assets/manifest.webmanifest --watch assets/icon-192.png --watch assets/icon-512.png \
         --watch assets/maps --watch assets/fonts \
         -- cargo run --locked --target-dir target/dev-build --features dev -- --preview {{args}}

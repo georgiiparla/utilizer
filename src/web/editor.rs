@@ -23,11 +23,17 @@ struct EditorTemplate {
     position: String,
     link: String,
     stamp: String,
+    capture_key: String,
 }
 
 fn stamp(store: &Store, kind: &str, point: &str) -> Result<String> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    if kind == "spot" && point.starts_with("spot-") {
+    if kind == "binds" {
+        store
+            .setting("capture_key")?
+            .unwrap_or_else(|| "F6".into())
+            .hash(&mut hash);
+    } else if kind == "spot" && point.starts_with("spot-") {
         let item = store.map_spot(point_id(point, "spot-")?)?;
         (
             item.id,
@@ -86,9 +92,10 @@ pub(super) async fn show(
                 position: String::new(),
                 link: String::new(),
                 stamp: String::new(),
+                capture_key: store.setting("capture_key")?.unwrap_or_else(|| "F6".into()),
             };
             match view.mode.as_str() {
-                "help" => {}
+                "binds" => {}
                 "spot" => {
                     if view.point.starts_with("spot-") {
                         let spot = store.map_spot(point_id(&view.point, "spot-")?)?;
@@ -145,6 +152,8 @@ pub(super) struct Action {
     stamp: String,
     #[serde(default)]
     mode: String,
+    #[serde(default)]
+    capture_key: String,
 }
 
 #[derive(Template)]
@@ -160,7 +169,8 @@ struct Saved {
 
 fn sync(store: &Store, root: &std::path::Path, map: &str, selected: Option<i64>) -> Result<()> {
     let spots = store.map_spots(map)?;
-    cfg::export_map_player(root, map, &spots, selected)?;
+    let key = store.setting("capture_key")?.unwrap_or_else(|| "F6".into());
+    cfg::export_map_player_with_capture_key(root, map, &spots, selected, &key)?;
     Ok(())
 }
 
@@ -177,6 +187,18 @@ fn perform(store: &mut Store, form: Action, root: &std::path::Path) -> Result<Sa
     let mut selected = None;
     let message;
     match form.kind.as_str() {
+        "binds" => {
+            if form.action != "save" {
+                return Err(invalid("Unknown action").into());
+            }
+            cfg::validate_capture_key(&form.capture_key)?;
+            store.set_setting("capture_key", &form.capture_key)?;
+            return Ok(Saved {
+                map: form.map,
+                changed: true,
+                message: "Binding saved. Sync in Saved mode, then press Up in CS2 to apply.".into(),
+            });
+        }
         "sync" => {
             if form.mode == "captures" || form.point.starts_with("capture-") {
                 return Err(invalid("Save captures before syncing").into());
